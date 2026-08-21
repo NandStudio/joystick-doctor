@@ -1,2 +1,1 @@
-import engine.libs.hidWrapper as hid
-
+from engine.device.hid_generic import GenericHidReader, enumerate_devices
