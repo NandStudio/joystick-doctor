@@ -1,25 +1,23 @@
 import hid
-from models import Controller
 
+from engine.libs.models import Controller
 
-"""bus_type : 1
-interface_number : 0
-manufacturer_string : Microsoft
-path : b'\\\\?\\HID#VID_046D&PID_C21D&IG_00#9&1b493451&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}'
-product_id : 49693
-product_string : Controller (Gamepad F310)
-release_number : 16404
-serial_number : BAD58EC9
-usage : 5
-usage_page : 1
-vendor_id : 1133"""
+# Generic Desktop (0x01): Joystick (0x04) and Gamepad (0x05)
+_GENERIC_DESKTOP = 0x01
+_JOYSTICK_USAGES = {0x04, 0x05}
+
 
 def listDevices() -> list[Controller]:
-    devices = list()
+    devices = []
     for device_dict in hid.enumerate():
-        keys = list(device_dict.keys())
-        keys.sort()
-        if "Controller" in device_dict["product_string"]:
-            devices.append(Controller(device_dict["path"], device_dict["product_id"], device_dict["product_string"]))
+        if device_dict.get("usage_page") != _GENERIC_DESKTOP:
+            continue
+        if device_dict.get("usage") not in _JOYSTICK_USAGES:
+            continue
+        name = device_dict.get("product_string") or "Unknown HID"
+        devices.append(
+            Controller(device_dict["path"], device_dict["product_id"], name)
+        )
     return devices
+
         
