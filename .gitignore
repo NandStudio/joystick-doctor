@@ -1,5 +1,6 @@
 .vscode
-.cursor
+# Track .cursor/rules/; keep local docs out of git
+.cursor/docs/
 .venv
 __pycache__
 *.pyc
