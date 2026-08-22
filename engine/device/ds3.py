@@ -65,8 +65,12 @@ def enumerate_devices() -> list[DeviceIdentity]:
     return devices
 
 
+def is_official_ps3(vendor_id: int, product_id: int) -> bool:
+    return vendor_id == VID and product_id in PIDS
+
+
 def _is_ds3_id(vendor_id: int, product_id: int) -> bool:
-    if vendor_id == VID and product_id in PIDS:
+    if is_official_ps3(vendor_id, product_id):
         return True
     return (vendor_id, product_id) in CLONE_IDS
 

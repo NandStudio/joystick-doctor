@@ -28,6 +28,7 @@ from engine.pipeline import Calibration, apply_calibration
 from engine.remap import BUTTONS, RemapConfig, RemapEngine, RemapRule
 from engine.device.catalog import device_key, enumerate_all, hide_paths_for
 from engine import hidhide
+from engine import ps3drv
 from engine.profiles import load_profile, profile_key, save_profile
 from engine.device.hotplug import HotplugMonitor
 from engine.device.pump import DevicePump
@@ -61,6 +62,17 @@ class _HidHideDownload(QThread):
     def run(self) -> None:
         try:
             self.finished_ok.emit(hidhide.download_installer())
+        except Exception as exc:
+            self.finished_err.emit(str(exc))
+
+
+class _Ps3DrvDownload(QThread):
+    finished_ok = Signal(object)
+    finished_err = Signal(str)
+
+    def run(self) -> None:
+        try:
+            self.finished_ok.emit(ps3drv.download_installer())
         except Exception as exc:
             self.finished_err.emit(str(exc))
 
@@ -181,6 +193,7 @@ class LiveWindow(QWidget):
         self._ignore_xinput: set[int] = set()
         self._hidden_instances: list[str] = []
         self._loading_profile = False
+        self._ps3_offer_asked = False
         self._devices: dict[str, DeviceIdentity] = {}
 
         self._list = QListWidget()
@@ -207,6 +220,7 @@ class LiveWindow(QWidget):
         self._status.setWordWrap(True)
         self._vigem_status = QLabel()
         self._hidhide_status = QLabel()
+        self._ps3_status = QLabel()
         self._profile_lbl = QLabel("Profile: —")
         self._profile_lbl.setWordWrap(True)
         self._diag_step = QLabel("Idle")
@@ -309,6 +323,7 @@ class LiveWindow(QWidget):
         side_lay.addWidget(QLabel("Drivers"))
         side_lay.addWidget(self._vigem_status)
         side_lay.addWidget(self._hidhide_status)
+        side_lay.addWidget(self._ps3_status)
         side_lay.addWidget(self._profile_lbl)
         side_lay.addWidget(self._save_btn)
         side_lay.addWidget(self._virtual_btn)
@@ -331,6 +346,7 @@ class LiveWindow(QWidget):
             self._add_device(device)
         if self._list.count():
             self._list.setCurrentRow(0)
+        QTimer.singleShot(400, self._maybe_offer_ps3_helper)
 
         self._timer = QTimer(self)
         self._timer.setInterval(16)
@@ -418,6 +434,8 @@ class LiveWindow(QWidget):
         item = QListWidgetItem(f"{device.product_name}  [{device.backend}]")
         item.setData(Qt.ItemDataRole.UserRole, key)
         self._list.addItem(item)
+        if ps3drv.needs_helper(device):
+            QTimer.singleShot(400, self._maybe_offer_ps3_helper)
 
     def _remove_device(self, device: DeviceIdentity) -> None:
         key = device_key(device)
@@ -446,12 +464,15 @@ class LiveWindow(QWidget):
         extra = "  profile loaded" if loaded else ""
         self._status.setText(f"Live: {device.product_name}{extra}")
         self._set_profile_label(device, loaded)
+        if ps3drv.needs_helper(device):
+            self._maybe_offer_ps3_helper()
 
     def _refresh_drivers(self) -> None:
         vigem = "OK" if vigem_installed() else "missing"
         hide = "OK" if hidhide.is_installed() else "missing"
         self._vigem_status.setText(f"ViGEmBus: {vigem}")
         self._hidhide_status.setText(f"HidHide: {hide}")
+        self._ps3_status.setText(f"PS3: {ps3drv.helper_status()}")
 
     def _set_profile_label(self, device: DeviceIdentity, loaded: bool) -> None:
         if loaded:
@@ -496,6 +517,48 @@ class LiveWindow(QWidget):
             except hidhide.HidHideError:
                 pass
         self._hidden_instances = []
+
+    def _maybe_offer_ps3_helper(self) -> None:
+        if self._ps3_offer_asked:
+            return
+        if not any(ps3drv.needs_helper(dev) for dev in self._devices.values()):
+            return
+        self._ps3_offer_asked = True
+        self._offer_ps3_helper()
+
+    def _offer_ps3_helper(self) -> None:
+        name = ps3drv.package_name()
+        if name == "DsHidMini":
+            detail = (
+                "A DualShock 3 was detected. Windows 10/11 works best with "
+                "the official Nefarius DsHidMini driver.\n"
+                "Download and install it now? Windows will ask for administrator permission."
+            )
+        else:
+            detail = (
+                "A DualShock 3 was detected. On this Windows version the "
+                "supported helper is the official Nefarius ScpToolkit "
+                "(archived; last release).\n"
+                "Download and install it now? Windows will ask for administrator permission."
+            )
+        answer = QMessageBox.question(self, name, detail)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._status.setText(f"Downloading official {name} setup...")
+        self._ps3_dl = _Ps3DrvDownload(self)
+        self._ps3_dl.finished_ok.connect(self._run_ps3_setup)
+        self._ps3_dl.finished_err.connect(self._status.setText)
+        self._ps3_dl.start()
+
+    def _run_ps3_setup(self, path) -> None:
+        name = ps3drv.package_name()
+        try:
+            ps3drv.launch_installer(path)
+        except ps3drv.Ps3DriverError as exc:
+            self._status.setText(str(exc))
+            return
+        self._status.setText(f"Finish the {name} installer, then reconnect the DualShock 3.")
+        self._refresh_drivers()
 
     def _offer_hidhide_install(self) -> None:
         answer = QMessageBox.question(
