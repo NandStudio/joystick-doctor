@@ -27,6 +27,8 @@ hiddenimports += [
     "engine.vigem",
     "engine.hidhide",
     "engine.virtual",
+    "engine.prefs",
+    "ui.i18n",
 ]
 
 a = Analysis(

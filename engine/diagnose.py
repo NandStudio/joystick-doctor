@@ -24,10 +24,16 @@ class AxisScore:
 
 
 @dataclass(slots=True)
+class Rec:
+    key: str
+    params: dict[str, object]
+
+
+@dataclass(slots=True)
 class Diagnosis:
     scores: list[AxisScore]
     global_score: int
-    recommendations: list[str]
+    recommendations: list[Rec]
 
 
 def _mean(values: list[float]) -> float:
@@ -51,9 +57,13 @@ def _score_reach(peak: float) -> int:
 
 def analyze(rest: list[NormalizedState], motion: list[NormalizedState], triggers: list[NormalizedState]) -> Diagnosis:
     scores: list[AxisScore] = []
-    recs: list[str] = []
+    recs: list[Rec] = []
     if not rest:
-        return Diagnosis([AxisScore("all", 0, "No rest samples")], 0, ["Run the rest step again"])
+        return Diagnosis(
+            [AxisScore("all", 0, "No rest samples")],
+            0,
+            [Rec("rec_rest_again", {})],
+        )
 
     pairs = (
         ("LS", "lx", "ly"),
@@ -78,27 +88,27 @@ def analyze(rest: list[NormalizedState], motion: list[NormalizedState], triggers
             )
         )
         if score < 80:
-            recs.append(f"Set {name} deadzone to {int(round(hint * 100))}%")
+            recs.append(Rec("rec_deadzone", {"name": name, "pct": int(round(hint * 100))}))
             if offset > 0.04:
-                recs.append(f"Recenter {name} (offset {offset:.3f})")
+                recs.append(Rec("rec_recenter", {"name": name, "offset": offset}))
 
     if motion:
         for name, xn, yn in pairs:
             peak = max(math.hypot(getattr(s, xn), getattr(s, yn)) for s in motion)
             scores.append(AxisScore(f"{name} range", _score_reach(peak), f"peak {peak:.2f}"))
             if peak < 0.85:
-                recs.append(f"{name} does not reach full throw ({peak:.2f})")
+                recs.append(Rec("rec_range", {"name": name, "peak": peak}))
 
     if triggers:
         for name, attr in (("LT", "lt"), ("RT", "rt")):
             peak = max(getattr(s, attr) for s in triggers)
             scores.append(AxisScore(name, _score_reach(peak), f"peak {peak:.2f}"))
             if peak < 0.9:
-                recs.append(f"{name} does not reach 100% ({peak:.2f})")
+                recs.append(Rec("rec_trigger", {"name": name, "peak": peak}))
 
     global_score = int(round(sum(item.score for item in scores) / len(scores)))
     if not recs:
-        recs.append("No changes needed")
+        recs.append(Rec("rec_none", {}))
     return Diagnosis(scores, global_score, recs)
 
 
@@ -120,12 +130,17 @@ class DiagnoseRunner:
         self.result = None
         self.phase = _PHASES[0][0]
 
+    def remaining(self) -> float:
+        if self.phase is None:
+            return 0.0
+        duration = _PHASES[self._index][1]
+        return max(0.0, duration - (time.perf_counter() - self._started))
+
     def instruction(self) -> str:
         if self.phase is None:
             return "Diagnosis idle"
-        name, duration, hint = _PHASES[self._index]
-        left = max(0.0, duration - (time.perf_counter() - self._started))
-        return f"{hint} ({left:.1f}s)"
+        _name, _duration, hint = _PHASES[self._index]
+        return f"{hint} ({self.remaining():.1f}s)"
 
     def feed(self, state: NormalizedState) -> None:
         if self.phase is None:

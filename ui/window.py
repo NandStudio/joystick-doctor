@@ -25,11 +25,13 @@ from PySide6.QtWidgets import (
 
 from engine.diagnose import DiagnoseRunner
 from engine.pipeline import Calibration, apply_calibration
+from engine.prefs import load_language, save_language
 from engine.remap import BUTTONS, RemapConfig, RemapEngine, RemapRule
 from engine.device.catalog import device_key, enumerate_all, hide_paths_for
 from engine import hidhide
 from engine import ps3drv
 from engine.profiles import load_profile, profile_key, save_profile
+from ui.i18n import set_language, tr
 from engine.device.hotplug import HotplugMonitor
 from engine.device.pump import DevicePump
 from engine.device.xinput import enumerate_devices as enumerate_xinput
@@ -88,6 +90,10 @@ class StickView(QWidget):
     def set_value(self, x: float, y: float) -> None:
         self._x = x
         self._y = y
+        self.update()
+
+    def set_title(self, title: str) -> None:
+        self._title = title
         self.update()
 
     def paintEvent(self, event) -> None:
@@ -194,6 +200,10 @@ class LiveWindow(QWidget):
         self._hidden_instances: list[str] = []
         self._loading_profile = False
         self._ps3_offer_asked = False
+        self._diag_result_shown = False
+        self._profile_name: str | None = None
+        self._lang_pref = load_language()
+        set_language(self._lang_pref)
         self._devices: dict[str, DeviceIdentity] = {}
 
         self._list = QListWidget()
@@ -203,36 +213,36 @@ class LiveWindow(QWidget):
         self._diag = DiagnoseRunner()
         self._remap = RemapEngine()
         self._remap_lock = threading.Lock()
-        self._ls = StickView("Left stick (filtered)")
-        self._rs = StickView("Right stick (filtered)")
+        self._ls = StickView(tr("stick_left"))
+        self._rs = StickView(tr("stick_right"))
         self._lt = QProgressBar()
         self._rt = QProgressBar()
         for bar in (self._lt, self._rt):
             bar.setRange(0, 100)
             bar.setTextVisible(True)
         self._pad = ButtonPad()
-        self._virtual_btn = QPushButton("Enable virtual controller")
+        self._virtual_btn = QPushButton()
         self._virtual_btn.setCheckable(True)
         self._virtual_btn.clicked.connect(self._toggle_virtual)
-        self._save_btn = QPushButton("Save profile")
+        self._save_btn = QPushButton()
         self._save_btn.clicked.connect(self._save_current_profile)
-        self._status = QLabel("No pad selected")
+        self._status = QLabel()
         self._status.setWordWrap(True)
         self._vigem_status = QLabel()
         self._hidhide_status = QLabel()
         self._ps3_status = QLabel()
-        self._profile_lbl = QLabel("Profile: —")
+        self._profile_lbl = QLabel()
         self._profile_lbl.setWordWrap(True)
-        self._diag_step = QLabel("Idle")
+        self._diag_step = QLabel()
         self._diag_step.setWordWrap(True)
         self._diag_step.setStyleSheet("font-size:16px; font-weight:600;")
         self._refresh_drivers()
         self._ls_dz = self._slider(0, 40, 10)
         self._rs_dz = self._slider(0, 40, 10)
         self._curve = self._slider(20, 200, 100)
-        self._invert_ly = QCheckBox("Invert LY")
-        self._invert_ry = QCheckBox("Invert RY")
-        self._recenter = QPushButton("Recenter sticks")
+        self._invert_ly = QCheckBox()
+        self._invert_ry = QCheckBox()
+        self._recenter = QPushButton()
         self._ls_dz.valueChanged.connect(self._sync_cal)
         self._rs_dz.valueChanged.connect(self._sync_cal)
         self._curve.valueChanged.connect(self._sync_cal)
@@ -245,7 +255,6 @@ class LiveWindow(QWidget):
         self._src_list.setMaximumHeight(110)
         self._dest = QComboBox()
         self._hold = QComboBox()
-        self._hold.addItem("No hold toggle", None)
         for key in BUTTONS:
             label = key.upper().replace("_", " ")
             self._src_list.addItem(label)
@@ -253,12 +262,14 @@ class LiveWindow(QWidget):
                 Qt.ItemDataRole.UserRole, key
             )
             self._dest.addItem(label, key)
-            self._hold.addItem(f"Hold {label} toggles", key)
+        self._fill_hold()
         self._rule_list = QListWidget()
-        self._add_rule = QPushButton("Add remap")
-        self._del_rule = QPushButton("Remove remap")
-        self._diag_btn = QPushButton("Run diagnosis")
-        self._apply_diag = QPushButton("Apply recommendations")
+        self._add_rule = QPushButton()
+        self._del_rule = QPushButton()
+        self._diag_btn = QPushButton()
+        self._apply_diag = QPushButton()
+        self._lang = QComboBox()
+        self._lang.currentIndexChanged.connect(self._on_language)
         self._diag_out = QPlainTextEdit()
         self._diag_out.setReadOnly(True)
         self._diag_btn.clicked.connect(self._start_diag)
@@ -272,17 +283,21 @@ class LiveWindow(QWidget):
         sticks.addWidget(self._ls)
         sticks.addWidget(self._rs)
         live_lay.addLayout(sticks)
-        live_lay.addWidget(QLabel("LT"))
+        self._lbl_lt = QLabel("LT")
+        self._lbl_rt = QLabel("RT")
+        self._lbl_buttons = QLabel()
+        live_lay.addWidget(self._lbl_lt)
         live_lay.addWidget(self._lt)
-        live_lay.addWidget(QLabel("RT"))
+        live_lay.addWidget(self._lbl_rt)
         live_lay.addWidget(self._rt)
-        live_lay.addWidget(QLabel("Buttons"))
+        live_lay.addWidget(self._lbl_buttons)
         live_lay.addWidget(self._pad)
         live_lay.addStretch()
 
         diag = QWidget()
         diag_lay = QVBoxLayout(diag)
-        diag_lay.addWidget(QLabel("1. Keep still   2. Full stick circles   3. Full triggers"))
+        self._lbl_diag_steps = QLabel()
+        diag_lay.addWidget(self._lbl_diag_steps)
         diag_lay.addWidget(self._diag_step)
         diag_lay.addWidget(self._diag_btn)
         diag_lay.addWidget(self._apply_diag)
@@ -291,18 +306,26 @@ class LiveWindow(QWidget):
 
         settings = QWidget()
         set_lay = QVBoxLayout(settings)
-        set_lay.addWidget(QLabel("LS deadzone %"))
+        self._lbl_ls_dz = QLabel()
+        self._lbl_rs_dz = QLabel()
+        self._lbl_curve = QLabel()
+        self._lbl_sources = QLabel()
+        self._lbl_dest = QLabel()
+        self._lbl_lang = QLabel()
+        set_lay.addWidget(self._lbl_lang)
+        set_lay.addWidget(self._lang)
+        set_lay.addWidget(self._lbl_ls_dz)
         set_lay.addWidget(self._ls_dz)
-        set_lay.addWidget(QLabel("RS deadzone %"))
+        set_lay.addWidget(self._lbl_rs_dz)
         set_lay.addWidget(self._rs_dz)
-        set_lay.addWidget(QLabel("Stick curve (100 = linear)"))
+        set_lay.addWidget(self._lbl_curve)
         set_lay.addWidget(self._curve)
         set_lay.addWidget(self._invert_ly)
         set_lay.addWidget(self._invert_ry)
         set_lay.addWidget(self._recenter)
-        set_lay.addWidget(QLabel("Remap sources (multi-select)"))
+        set_lay.addWidget(self._lbl_sources)
         set_lay.addWidget(self._src_list)
-        set_lay.addWidget(QLabel("Destination"))
+        set_lay.addWidget(self._lbl_dest)
         set_lay.addWidget(self._dest)
         set_lay.addWidget(self._hold)
         set_lay.addWidget(self._add_rule)
@@ -310,17 +333,19 @@ class LiveWindow(QWidget):
         set_lay.addWidget(self._del_rule)
         set_lay.addStretch()
 
-        tabs = QTabWidget()
-        tabs.addTab(live, "Live")
-        tabs.addTab(diag, "Diagnosis")
-        tabs.addTab(settings, "Settings")
+        self._tabs = QTabWidget()
+        self._tabs.addTab(live, "")
+        self._tabs.addTab(diag, "")
+        self._tabs.addTab(settings, "")
 
         side = QWidget()
         side.setMaximumWidth(280)
         side_lay = QVBoxLayout(side)
-        side_lay.addWidget(QLabel("Device"))
+        self._lbl_device = QLabel()
+        self._lbl_drivers = QLabel()
+        side_lay.addWidget(self._lbl_device)
         side_lay.addWidget(self._list)
-        side_lay.addWidget(QLabel("Drivers"))
+        side_lay.addWidget(self._lbl_drivers)
         side_lay.addWidget(self._vigem_status)
         side_lay.addWidget(self._hidhide_status)
         side_lay.addWidget(self._ps3_status)
@@ -332,7 +357,8 @@ class LiveWindow(QWidget):
 
         root = QHBoxLayout(self)
         root.addWidget(side, 0)
-        root.addWidget(tabs, 1)
+        root.addWidget(self._tabs, 1)
+        self._retranslate()
 
         self._bridge = _Bridge()
         self._bridge.added.connect(self._add_device)
@@ -361,18 +387,120 @@ class LiveWindow(QWidget):
         self._monitor.stop()
         super().closeEvent(event)
 
+    def _fill_hold(self) -> None:
+        current = self._hold.currentData() if self._hold.count() else None
+        self._hold.blockSignals(True)
+        self._hold.clear()
+        self._hold.addItem(tr("hold_none"), None)
+        for key in BUTTONS:
+            label = key.upper().replace("_", " ")
+            self._hold.addItem(tr("hold_item", label=label), key)
+        index = self._hold.findData(current)
+        self._hold.setCurrentIndex(max(0, index))
+        self._hold.blockSignals(False)
+
+    def _fill_language(self) -> None:
+        self._lang.blockSignals(True)
+        self._lang.clear()
+        self._lang.addItem(tr("lang_system"), "system")
+        self._lang.addItem(tr("lang_en"), "en")
+        self._lang.addItem(tr("lang_es"), "es")
+        index = self._lang.findData(self._lang_pref)
+        self._lang.setCurrentIndex(max(0, index))
+        self._lang.blockSignals(False)
+
+    def _on_language(self) -> None:
+        pref = self._lang.currentData() or "system"
+        self._lang_pref = pref
+        save_language(pref)
+        set_language(pref)
+        self._retranslate()
+
+    def _retranslate(self) -> None:
+        self._fill_language()
+        self._fill_hold()
+        self._save_btn.setText(tr("save_profile"))
+        self._virtual_btn.setText(
+            tr("virtual_off") if self._virtual_btn.isChecked() else tr("virtual_on")
+        )
+        self._invert_ly.setText(tr("invert_ly"))
+        self._invert_ry.setText(tr("invert_ry"))
+        self._recenter.setText(tr("recenter"))
+        self._add_rule.setText(tr("add_remap"))
+        self._del_rule.setText(tr("del_remap"))
+        self._diag_btn.setText(tr("run_diag"))
+        self._apply_diag.setText(tr("apply_diag"))
+        self._ls.set_title(tr("stick_left"))
+        self._rs.set_title(tr("stick_right"))
+        self._lbl_buttons.setText(tr("buttons"))
+        self._lbl_diag_steps.setText(tr("diag_steps"))
+        self._lbl_ls_dz.setText(tr("ls_dz"))
+        self._lbl_rs_dz.setText(tr("rs_dz"))
+        self._lbl_curve.setText(tr("curve"))
+        self._lbl_sources.setText(tr("remap_sources"))
+        self._lbl_dest.setText(tr("destination"))
+        self._lbl_lang.setText(tr("language"))
+        self._lbl_device.setText(tr("device"))
+        self._lbl_drivers.setText(tr("drivers"))
+        self._tabs.setTabText(0, tr("tab_live"))
+        self._tabs.setTabText(1, tr("tab_diag"))
+        self._tabs.setTabText(2, tr("tab_settings"))
+        if self._diag.running():
+            self._diag_step.setText(self._diag_hint())
+        elif self._diag.result is not None:
+            result = self._diag.result
+            lines = [tr("diag_score", score=result.global_score)]
+            lines.extend(f"{item.name}: {item.score}  {item.detail}" for item in result.scores)
+            lines.extend(tr(item.key, **item.params) for item in result.recommendations)
+            self._diag_out.setPlainText("\n".join(lines))
+            self._diag_step.setText(tr("diag_done", score=result.global_score))
+        else:
+            self._diag_step.setText(tr("diag_idle"))
+        if self._pump is None:
+            self._status.setText(tr("no_pad"))
+        self._refresh_drivers()
+        if self._profile_name:
+            self._profile_lbl.setText(tr("profile_named", name=self._profile_name))
+        else:
+            self._profile_lbl.setText(tr("profile_none"))
+
+    def _diag_hint(self) -> str:
+        if not self._diag.running() or self._diag.phase is None:
+            return tr("diag_idle")
+        key = {
+            "rest": "diag_rest",
+            "range": "diag_range",
+            "triggers": "diag_triggers",
+        }.get(self._diag.phase, "diag_idle")
+        return tr(key, t=self._diag.remaining())
+
+    def _ask_yes(self, title: str, body: str) -> bool:
+        box = QMessageBox(self)
+        box.setWindowTitle(title)
+        box.setText(body)
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        yes = box.button(QMessageBox.StandardButton.Yes)
+        no = box.button(QMessageBox.StandardButton.No)
+        if yes is not None:
+            yes.setText(tr("yes"))
+        if no is not None:
+            no.setText(tr("no"))
+        return box.exec() == QMessageBox.StandardButton.Yes
+
     def _toggle_virtual(self, checked: bool) -> None:
         if not checked:
             self._virtual.stop()
             self._unhide_physical()
             self._ignore_xinput.clear()
-            self._virtual_btn.setText("Enable virtual controller")
-            self._status.setText("Virtual pad stopped")
+            self._virtual_btn.setText(tr("virtual_on"))
+            self._status.setText(tr("virtual_stopped"))
             self._refresh_drivers()
             return
         if self._pump is None:
             self._virtual_btn.setChecked(False)
-            self._status.setText("Select a pad first")
+            self._status.setText(tr("select_pad"))
             return
         before = {dev.index for dev in enumerate_xinput() if dev.index is not None}
         try:
@@ -389,21 +517,14 @@ class LiveWindow(QWidget):
         after = {dev.index for dev in enumerate_xinput() if dev.index is not None}
         self._ignore_xinput = after - before
         hide_note = self._hide_physical(self._pump.identity)
-        self._virtual_btn.setText("Parar mando virtual")
-        self._status.setText(f"Virtual Xbox 360 running. {hide_note}")
+        self._virtual_btn.setText(tr("virtual_off"))
+        self._status.setText(tr("virtual_running", note=hide_note))
         self._refresh_drivers()
 
     def _offer_vigem_install(self) -> None:
-        answer = QMessageBox.question(
-            self,
-            "ViGEmBus",
-            "ViGEmBus is required for the virtual pad.\n"
-            "Download the official setup from Nefarius and install it?\n"
-            "Windows will ask for administrator permission.",
-        )
-        if answer != QMessageBox.StandardButton.Yes:
+        if not self._ask_yes("ViGEmBus", tr("vigem_body")):
             return
-        self._status.setText("Downloading official ViGEmBus setup...")
+        self._status.setText(tr("dl_setup", name="ViGEmBus"))
         self._virtual_btn.setEnabled(False)
         self._dl = _InstallerDownload(self)
         self._dl.finished_ok.connect(self._run_vigem_setup)
@@ -417,7 +538,7 @@ class LiveWindow(QWidget):
         except RuntimeError as exc:
             self._status.setText(str(exc))
             return
-        self._status.setText("Finish the ViGEmBus installer, then activate the virtual pad again.")
+        self._status.setText(tr("finish_vigem"))
         self._refresh_drivers()
 
     def _vigem_download_failed(self, message: str) -> None:
@@ -447,7 +568,7 @@ class LiveWindow(QWidget):
                 break
         if self._pump and device_key(self._pump.identity) == key:
             self._stop_pump()
-            self._status.setText("Disconnected")
+            self._status.setText(tr("disconnected"))
 
     def _on_pick(self, current: QListWidgetItem | None, _prev: QListWidgetItem | None) -> None:
         if current is None:
@@ -461,24 +582,31 @@ class LiveWindow(QWidget):
         self._pump = DevicePump(device)
         self._pump.start()
         loaded = self._load_current_profile(device)
-        extra = "  profile loaded" if loaded else ""
-        self._status.setText(f"Live: {device.product_name}{extra}")
+        extra = tr("profile_loaded") if loaded else ""
+        self._status.setText(tr("live_pad", name=device.product_name, extra=extra))
         self._set_profile_label(device, loaded)
         if ps3drv.needs_helper(device):
             self._maybe_offer_ps3_helper()
 
     def _refresh_drivers(self) -> None:
-        vigem = "OK" if vigem_installed() else "missing"
-        hide = "OK" if hidhide.is_installed() else "missing"
+        vigem = tr("driver_ok") if vigem_installed() else tr("driver_missing")
+        hide = tr("driver_ok") if hidhide.is_installed() else tr("driver_missing")
         self._vigem_status.setText(f"ViGEmBus: {vigem}")
         self._hidhide_status.setText(f"HidHide: {hide}")
-        self._ps3_status.setText(f"PS3: {ps3drv.helper_status()}")
+        if ps3drv.dshidmini_installed():
+            self._ps3_status.setText(tr("ps3_ok", name="DsHidMini"))
+        elif ps3drv.scp_installed():
+            self._ps3_status.setText(tr("ps3_ok", name="ScpToolkit"))
+        else:
+            self._ps3_status.setText(tr("ps3_missing", name=ps3drv.package_name()))
 
     def _set_profile_label(self, device: DeviceIdentity, loaded: bool) -> None:
         if loaded:
-            self._profile_lbl.setText(f"Profile: {profile_key(device)}.json")
+            self._profile_name = f"{profile_key(device)}.json"
+            self._profile_lbl.setText(tr("profile_named", name=self._profile_name))
         else:
-            self._profile_lbl.setText("Profile: none (defaults)")
+            self._profile_name = None
+            self._profile_lbl.setText(tr("profile_none"))
 
     def _slider(self, low: int, high: int, value: int) -> QSlider:
         slider = QSlider(Qt.Orientation.Horizontal)
@@ -489,7 +617,7 @@ class LiveWindow(QWidget):
     def _hide_physical(self, identity: DeviceIdentity) -> str:
         if not hidhide.is_installed():
             self._offer_hidhide_install()
-            return "HidHide missing: games will see two pads."
+            return tr("hide_missing")
         try:
             hidhide.register_app(sys.executable)
             hidden = []
@@ -500,10 +628,10 @@ class LiveWindow(QWidget):
             hidhide.cloak(True)
             self._hidden_instances = hidden
             if not hidden:
-                return "HidHide on, but no HID path to hide (XInput-only)."
-            return "Physical pad hidden from other apps."
+                return tr("hide_xinput")
+            return tr("hide_ok")
         except hidhide.HidHideError as exc:
-            return f"HidHide failed ({exc}). Games may see two pads."
+            return tr("hide_fail", error=exc)
 
     def _unhide_physical(self) -> None:
         for instance in self._hidden_instances:
@@ -528,23 +656,10 @@ class LiveWindow(QWidget):
 
     def _offer_ps3_helper(self) -> None:
         name = ps3drv.package_name()
-        if name == "DsHidMini":
-            detail = (
-                "A DualShock 3 was detected. Windows 10/11 works best with "
-                "the official Nefarius DsHidMini driver.\n"
-                "Download and install it now? Windows will ask for administrator permission."
-            )
-        else:
-            detail = (
-                "A DualShock 3 was detected. On this Windows version the "
-                "supported helper is the official Nefarius ScpToolkit "
-                "(archived; last release).\n"
-                "Download and install it now? Windows will ask for administrator permission."
-            )
-        answer = QMessageBox.question(self, name, detail)
-        if answer != QMessageBox.StandardButton.Yes:
+        detail = tr("ps3_dshidmini") if name == "DsHidMini" else tr("ps3_scp")
+        if not self._ask_yes(name, detail):
             return
-        self._status.setText(f"Downloading official {name} setup...")
+        self._status.setText(tr("dl_setup", name=name))
         self._ps3_dl = _Ps3DrvDownload(self)
         self._ps3_dl.finished_ok.connect(self._run_ps3_setup)
         self._ps3_dl.finished_err.connect(self._status.setText)
@@ -557,20 +672,13 @@ class LiveWindow(QWidget):
         except ps3drv.Ps3DriverError as exc:
             self._status.setText(str(exc))
             return
-        self._status.setText(f"Finish the {name} installer, then reconnect the DualShock 3.")
+        self._status.setText(tr("finish_ps3", name=name))
         self._refresh_drivers()
 
     def _offer_hidhide_install(self) -> None:
-        answer = QMessageBox.question(
-            self,
-            "HidHide",
-            "HidHide hides the physical pad so games only see the virtual one.\n"
-            "Download the official setup from Nefarius and install it?\n"
-            "Windows will ask for administrator permission.",
-        )
-        if answer != QMessageBox.StandardButton.Yes:
+        if not self._ask_yes("HidHide", tr("hidhide_body")):
             return
-        self._status.setText("Downloading official HidHide setup...")
+        self._status.setText(tr("dl_setup", name="HidHide"))
         self._hh_dl = _HidHideDownload(self)
         self._hh_dl.finished_ok.connect(self._run_hidhide_setup)
         self._hh_dl.finished_err.connect(self._status.setText)
@@ -582,7 +690,7 @@ class LiveWindow(QWidget):
         except hidhide.HidHideError as exc:
             self._status.setText(str(exc))
             return
-        self._status.setText("Finish the HidHide installer, then activate the virtual pad again.")
+        self._status.setText(tr("finish_hidhide"))
         self._refresh_drivers()
 
     def _save_current_profile(self) -> None:
@@ -591,8 +699,9 @@ class LiveWindow(QWidget):
         with self._cal_lock:
             cal = self._cal
         path = save_profile(self._pump.identity, cal, self._rules)
-        self._status.setText(f"Saved {path.name}")
-        self._profile_lbl.setText(f"Profile: {path.name}")
+        self._status.setText(tr("saved", name=path.name))
+        self._profile_name = path.name
+        self._profile_lbl.setText(tr("profile_named", name=path.name))
 
     def _load_current_profile(self, device: DeviceIdentity) -> bool:
         loaded = load_profile(device)
@@ -652,7 +761,7 @@ class LiveWindow(QWidget):
         )
         dest = self._dest.currentData()
         if not sources or not dest:
-            self._status.setText("Select at least one source and a destination")
+            self._status.setText(tr("select_remap"))
             return
         rule = RemapRule(sources, dest, self._hold.currentData())
         self._rules.append(rule)
@@ -678,7 +787,7 @@ class LiveWindow(QWidget):
             self._cal.left.center_y = raw.ly
             self._cal.right.center_x = raw.rx
             self._cal.right.center_y = raw.ry
-        self._status.setText("Stick centers captured")
+        self._status.setText(tr("centers"))
         self._save_current_profile()
 
     def _current_state(self) -> NormalizedState | None:
@@ -693,17 +802,19 @@ class LiveWindow(QWidget):
 
     def _start_diag(self) -> None:
         if self._pump is None:
-            self._status.setText("Select a pad first")
+            self._status.setText(tr("select_pad"))
             return
         self._diag.start()
-        self._diag_out.setPlainText("Diagnosis started...")
-        self._diag_step.setText(self._diag.instruction())
-        self._status.setText(self._diag.instruction())
+        self._diag_result_shown = False
+        self._diag_out.setPlainText(tr("diag_started"))
+        hint = self._diag_hint()
+        self._diag_step.setText(hint)
+        self._status.setText(hint)
 
     def _apply_diag_recs(self) -> None:
         result = self._diag.result
         if result is None:
-            self._status.setText("Run diagnosis first")
+            self._status.setText(tr("run_diag_first"))
             return
         with self._cal_lock:
             for item in result.scores:
@@ -723,7 +834,7 @@ class LiveWindow(QWidget):
                     self._rs_dz.blockSignals(True)
                     self._rs_dz.setValue(int(round(item.deadzone_hint * 100)))
                     self._rs_dz.blockSignals(False)
-        self._status.setText("Applied diagnosis recommendations")
+        self._status.setText(tr("applied_diag"))
         self._save_current_profile()
 
     def _tick(self) -> None:
@@ -732,27 +843,29 @@ class LiveWindow(QWidget):
         raw = self._pump.latest()
         if raw is not None and self._diag.running():
             self._diag.feed(raw)
-            self._diag_step.setText(self._diag.instruction())
-            self._status.setText(self._diag.instruction())
-        elif self._diag.result is not None and self._diag_out.toPlainText().startswith("Diagnosis"):
+            hint = self._diag_hint()
+            self._diag_step.setText(hint)
+            self._status.setText(hint)
+        elif self._diag.result is not None and not self._diag_result_shown:
             result = self._diag.result
-            lines = [f"Score {result.global_score}/100"]
+            self._diag_result_shown = True
+            lines = [tr("diag_score", score=result.global_score)]
             lines.extend(f"{item.name}: {item.score}  {item.detail}" for item in result.scores)
-            lines.extend(result.recommendations)
+            lines.extend(tr(item.key, **item.params) for item in result.recommendations)
             self._diag_out.setPlainText("\n".join(lines))
-            self._diag_step.setText(f"Done — score {result.global_score}/100")
+            self._diag_step.setText(tr("diag_done", score=result.global_score))
             self._apply_diag_recs()
         if self._virtual.error():
-            self._status.setText(f"Virtual pad: {self._virtual.error()}")
+            self._status.setText(tr("virtual_err", error=self._virtual.error()))
             self._virtual.stop()
             self._virtual_btn.setChecked(False)
-            self._virtual_btn.setText("Enable virtual controller")
+            self._virtual_btn.setText(tr("virtual_on"))
             return
         if self._pump.error():
             self._status.setText(str(self._pump.error()))
             return
         if not self._pump.connected():
-            self._status.setText("Disconnected")
+            self._status.setText(tr("disconnected"))
             return
         state = self._filtered(self._pump.latest())
         if state is None:
