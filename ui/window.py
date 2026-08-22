@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QProgressBar,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -16,7 +17,9 @@ from PySide6.QtWidgets import (
 from engine.device.catalog import device_key, enumerate_all
 from engine.device.hotplug import HotplugMonitor
 from engine.device.pump import DevicePump
+from engine.device.xinput import enumerate_devices as enumerate_xinput
 from engine.state import DeviceIdentity, NormalizedState
+from engine.virtual import VirtualXbox
 
 
 class _Bridge(QObject):
@@ -136,6 +139,8 @@ class LiveWindow(QWidget):
         self.setWindowTitle("Joystick Doctor")
         self.resize(860, 520)
         self._pump: DevicePump | None = None
+        self._virtual = VirtualXbox()
+        self._ignore_xinput: set[int] = set()
         self._devices: dict[str, DeviceIdentity] = {}
 
         self._list = QListWidget()
@@ -148,6 +153,9 @@ class LiveWindow(QWidget):
             bar.setRange(0, 100)
             bar.setTextVisible(True)
         self._pad = ButtonPad()
+        self._virtual_btn = QPushButton("Activar mando virtual")
+        self._virtual_btn.setCheckable(True)
+        self._virtual_btn.clicked.connect(self._toggle_virtual)
         self._status = QLabel("No pad selected")
 
         sticks = QHBoxLayout()
@@ -163,6 +171,7 @@ class LiveWindow(QWidget):
         right = QVBoxLayout()
         right.addLayout(sticks)
         right.addLayout(triggers)
+        right.addWidget(self._virtual_btn)
         right.addWidget(self._status)
 
         root = QHBoxLayout(self)
@@ -189,11 +198,37 @@ class LiveWindow(QWidget):
 
     def closeEvent(self, event) -> None:
         self._timer.stop()
+        self._virtual.stop()
         self._stop_pump()
         self._monitor.stop()
         super().closeEvent(event)
 
+    def _toggle_virtual(self, checked: bool) -> None:
+        if not checked:
+            self._virtual.stop()
+            self._ignore_xinput.clear()
+            self._virtual_btn.setText("Activar mando virtual")
+            self._status.setText("Virtual pad stopped")
+            return
+        if self._pump is None:
+            self._virtual_btn.setChecked(False)
+            self._status.setText("Select a pad first")
+            return
+        before = {dev.index for dev in enumerate_xinput() if dev.index is not None}
+        try:
+            self._virtual.start(self._current_state)
+        except RuntimeError as exc:
+            self._virtual_btn.setChecked(False)
+            self._status.setText(str(exc))
+            return
+        after = {dev.index for dev in enumerate_xinput() if dev.index is not None}
+        self._ignore_xinput = after - before
+        self._virtual_btn.setText("Parar mando virtual")
+        self._status.setText("Virtual Xbox 360 running (games will see two pads)")
+
     def _add_device(self, device: DeviceIdentity) -> None:
+        if device.backend == "xinput" and device.index in self._ignore_xinput:
+            return
         key = device_key(device)
         if key in self._devices:
             return
@@ -227,6 +262,11 @@ class LiveWindow(QWidget):
         self._pump.start()
         self._status.setText(f"Live: {device.product_name}")
 
+    def _current_state(self) -> NormalizedState | None:
+        if self._pump is None:
+            return None
+        return self._pump.latest()
+
     def _stop_pump(self) -> None:
         if self._pump is not None:
             self._pump.stop()
@@ -234,6 +274,12 @@ class LiveWindow(QWidget):
 
     def _tick(self) -> None:
         if self._pump is None:
+            return
+        if self._virtual.error():
+            self._status.setText(f"Virtual pad: {self._virtual.error()}")
+            self._virtual.stop()
+            self._virtual_btn.setChecked(False)
+            self._virtual_btn.setText("Activar mando virtual")
             return
         if self._pump.error():
             self._status.setText(str(self._pump.error()))
