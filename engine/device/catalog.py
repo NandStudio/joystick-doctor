@@ -27,9 +27,27 @@ def device_key(identity: DeviceIdentity) -> str:
     return f"{identity.backend}:{path}"
 
 
+_XINPUT_ALSO_HID = {
+    (0x045E, 0x028E),
+    (0x045E, 0x028F),
+    (0x045E, 0x02D1),
+    (0x045E, 0x02DD),
+    (0x045E, 0x02E0),
+    (0x045E, 0x02EA),
+    (0x045E, 0x0B12),
+    (0x046D, 0xC21D),
+}
+
+
 def _is_xinput_hid_path(path: bytes | str) -> bool:
     text = path.decode("ascii", errors="replace") if isinstance(path, bytes) else path
     return "IG_00" in text.upper()
+
+
+def _hidden_by_xinput(device: DeviceIdentity) -> bool:
+    if device.vendor_id == 0x045E:
+        return True
+    return (device.vendor_id, device.product_id) in _XINPUT_ALSO_HID
 
 
 def _classify_hid(device: DeviceIdentity) -> DeviceIdentity:
@@ -43,9 +61,13 @@ def _classify_hid(device: DeviceIdentity) -> DeviceIdentity:
 
 
 def enumerate_all() -> list[DeviceIdentity]:
-    devices = list(enumerate_xinput())
+    xinput_devs = list(enumerate_xinput())
+    hide_xinput_hid = bool(xinput_devs)
+    devices = list(xinput_devs)
     for hid_dev in enumerate_hid():
         if _is_xinput_hid_path(hid_dev.path):
+            continue
+        if hide_xinput_hid and _hidden_by_xinput(hid_dev):
             continue
         devices.append(_classify_hid(hid_dev))
     return devices

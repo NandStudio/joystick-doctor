@@ -28,6 +28,7 @@ _Y = 0x8000
 
 
 class XINPUT_GAMEPAD(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("wButtons", wintypes.WORD),
         ("bLeftTrigger", wintypes.BYTE),
@@ -40,6 +41,7 @@ class XINPUT_GAMEPAD(ctypes.Structure):
 
 
 class XINPUT_STATE(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("dwPacketNumber", wintypes.DWORD),
         ("Gamepad", XINPUT_GAMEPAD),
@@ -108,8 +110,8 @@ def parse_state(packet: XINPUT_STATE) -> NormalizedState:
         ly=_axis_i16(pad.sThumbLY),
         rx=_axis_i16(pad.sThumbRX),
         ry=_axis_i16(pad.sThumbRY),
-        lt=pad.bLeftTrigger / 255.0,
-        rt=pad.bRightTrigger / 255.0,
+        lt=(pad.bLeftTrigger & 0xFF) / 255.0,
+        rt=(pad.bRightTrigger & 0xFF) / 255.0,
         a=bool(buttons & _A),
         b=bool(buttons & _B),
         x=bool(buttons & _X),
