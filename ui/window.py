@@ -9,17 +9,20 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QCheckBox,
+    QComboBox,
     QMessageBox,
     QListWidget,
     QListWidgetItem,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSlider,
     QVBoxLayout,
     QWidget,
 )
 
 from engine.pipeline import Calibration, apply_calibration
+from engine.remap import BUTTONS, RemapConfig, RemapEngine, RemapRule
 from engine.device.catalog import device_key, enumerate_all
 from engine.device.hotplug import HotplugMonitor
 from engine.device.pump import DevicePump
@@ -165,6 +168,8 @@ class LiveWindow(QWidget):
         self._list.currentItemChanged.connect(self._on_pick)
         self._cal = Calibration.default()
         self._cal_lock = threading.Lock()
+        self._remap = RemapEngine()
+        self._remap_lock = threading.Lock()
         self._ls = StickView("Left stick (filtered)")
         self._rs = StickView("Right stick (filtered)")
         self._lt = QProgressBar()
@@ -189,6 +194,26 @@ class LiveWindow(QWidget):
         self._invert_ly.toggled.connect(self._sync_cal)
         self._invert_ry.toggled.connect(self._sync_cal)
         self._recenter.clicked.connect(self._recenter_sticks)
+        self._rules: list[RemapRule] = []
+        self._src_list = QListWidget()
+        self._src_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
+        self._src_list.setMaximumHeight(110)
+        self._dest = QComboBox()
+        self._hold = QComboBox()
+        self._hold.addItem("No hold toggle", None)
+        for key in BUTTONS:
+            label = key.upper().replace("_", " ")
+            self._src_list.addItem(label)
+            self._src_list.item(self._src_list.count() - 1).setData(
+                Qt.ItemDataRole.UserRole, key
+            )
+            self._dest.addItem(label, key)
+            self._hold.addItem(f"Hold {label} toggles", key)
+        self._rule_list = QListWidget()
+        self._add_rule = QPushButton("Add remap")
+        self._del_rule = QPushButton("Remove remap")
+        self._add_rule.clicked.connect(self._add_custom_rule)
+        self._del_rule.clicked.connect(self._remove_custom_rule)
 
         sticks = QHBoxLayout()
         sticks.addWidget(self._ls)
@@ -200,7 +225,8 @@ class LiveWindow(QWidget):
         triggers.addWidget(self._rt)
         triggers.addWidget(QLabel("Buttons"))
         triggers.addWidget(self._pad)
-        right = QVBoxLayout()
+        right_host = QWidget()
+        right = QVBoxLayout(right_host)
         right.addLayout(sticks)
         right.addLayout(triggers)
         right.addWidget(QLabel("LS deadzone %"))
@@ -212,12 +238,23 @@ class LiveWindow(QWidget):
         right.addWidget(self._invert_ly)
         right.addWidget(self._invert_ry)
         right.addWidget(self._recenter)
+        right.addWidget(QLabel("Remap sources (multi-select)"))
+        right.addWidget(self._src_list)
+        right.addWidget(QLabel("Destination"))
+        right.addWidget(self._dest)
+        right.addWidget(self._hold)
+        right.addWidget(self._add_rule)
+        right.addWidget(self._rule_list)
+        right.addWidget(self._del_rule)
         right.addWidget(self._virtual_btn)
         right.addWidget(self._status)
 
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(right_host)
         root = QHBoxLayout(self)
         root.addWidget(self._list, 1)
-        root.addLayout(right, 2)
+        root.addWidget(scroll, 2)
 
         self._bridge = _Bridge()
         self._bridge.added.connect(self._add_device)
@@ -358,7 +395,43 @@ class LiveWindow(QWidget):
             return None
         with self._cal_lock:
             cal = self._cal
-        return apply_calibration(raw, cal)
+        calibrated = apply_calibration(raw, cal)
+        with self._remap_lock:
+            return self._remap.apply(calibrated)
+
+    def _sync_remap(self) -> None:
+        with self._remap_lock:
+            self._remap = RemapEngine(RemapConfig(list(self._rules)))
+
+    def _rule_label(self, rule: RemapRule) -> str:
+        sources = "+".join(src.upper() for src in rule.sources)
+        text = f"{sources} → {rule.dest.upper()}"
+        if rule.toggle_hold:
+            text += f"  (hold {rule.toggle_hold.upper()})"
+        return text
+
+    def _add_custom_rule(self) -> None:
+        sources = tuple(
+            item.data(Qt.ItemDataRole.UserRole)
+            for item in self._src_list.selectedItems()
+            if item.data(Qt.ItemDataRole.UserRole)
+        )
+        dest = self._dest.currentData()
+        if not sources or not dest:
+            self._status.setText("Select at least one source and a destination")
+            return
+        rule = RemapRule(sources, dest, self._hold.currentData())
+        self._rules.append(rule)
+        self._rule_list.addItem(self._rule_label(rule))
+        self._sync_remap()
+
+    def _remove_custom_rule(self) -> None:
+        row = self._rule_list.currentRow()
+        if row < 0:
+            return
+        self._rule_list.takeItem(row)
+        del self._rules[row]
+        self._sync_remap()
 
     def _recenter_sticks(self) -> None:
         raw = self._pump.latest() if self._pump else None
