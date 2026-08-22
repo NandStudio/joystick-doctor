@@ -22,6 +22,22 @@ python main.py
 
 Dependencias: `hidapi`, `vgamepad`, `PySide6`.
 
+## Empaquetar (Windows)
+
+1. [Inno Setup 6](https://jrsoftware.org/isinfo.php) (incluye `ISCC.exe`).
+2. PyInstaller arma `dist\JoystickDoctor\` (exe + DLLs de Qt/hidapi/ViGEmClient).
+3. Inno envuelve esa carpeta en `dist\JoystickDoctorSetup-0.1.0.exe`.
+
+```powershell
+.\packaging\build.ps1
+```
+
+Distribuí el setup de Inno, no el zip suelto. El instalador **no** mete drivers de kernel; ViGEmBus / HidHide / DsHidMini se ofrecen desde la app.
+
+La versión del setup está en `packaging\joystick-doctor.iss` (`#define MyAppVersion`). Los perfiles en `%LOCALAPPDATA%\joystick-doctor` no se borran al desinstalar.
+
+Script: `packaging\joystick-doctor.iss`. Build tools Python: `pip install -r requirements-build.txt`.
+
 ## Mandos
 
 | Familia | Cómo se lee |
