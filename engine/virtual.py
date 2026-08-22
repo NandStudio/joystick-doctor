@@ -5,6 +5,7 @@ import time
 from collections.abc import Callable
 
 from engine.state import NormalizedState
+from engine.vigem import ViGEmMissingError, is_installed
 
 StateSource = Callable[[], NormalizedState | None]
 
@@ -34,11 +35,13 @@ class VirtualXbox:
             import vgamepad
         except ImportError as exc:
             raise RuntimeError("vgamepad is not installed") from exc
+        if not is_installed():
+            raise ViGEmMissingError("ViGEmBus is not installed.")
         try:
             self._pad = vgamepad.VX360Gamepad()
         except Exception as exc:
-            raise RuntimeError(
-                "ViGEmBus is missing or failed. Install it, then retry."
+            raise ViGEmMissingError(
+                "ViGEmBus is present but failed to open a virtual pad."
             ) from exc
         self._source = source
         self._stop.clear()

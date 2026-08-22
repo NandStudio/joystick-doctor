@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, QPointF, QTimer, Qt, Signal
+from PySide6.QtCore import QObject, QPointF, QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QListWidget,
     QListWidgetItem,
     QProgressBar,
@@ -19,12 +20,24 @@ from engine.device.hotplug import HotplugMonitor
 from engine.device.pump import DevicePump
 from engine.device.xinput import enumerate_devices as enumerate_xinput
 from engine.state import DeviceIdentity, NormalizedState
+from engine.vigem import ViGEmMissingError, download_installer, launch_installer
 from engine.virtual import VirtualXbox
 
 
 class _Bridge(QObject):
     added = Signal(object)
     removed = Signal(object)
+
+
+class _InstallerDownload(QThread):
+    finished_ok = Signal(object)
+    finished_err = Signal(str)
+
+    def run(self) -> None:
+        try:
+            self.finished_ok.emit(download_installer())
+        except Exception as exc:
+            self.finished_err.emit(str(exc))
 
 
 class StickView(QWidget):
@@ -217,6 +230,11 @@ class LiveWindow(QWidget):
         before = {dev.index for dev in enumerate_xinput() if dev.index is not None}
         try:
             self._virtual.start(self._current_state)
+        except ViGEmMissingError as exc:
+            self._virtual_btn.setChecked(False)
+            self._status.setText(str(exc))
+            self._offer_vigem_install()
+            return
         except RuntimeError as exc:
             self._virtual_btn.setChecked(False)
             self._status.setText(str(exc))
@@ -225,6 +243,36 @@ class LiveWindow(QWidget):
         self._ignore_xinput = after - before
         self._virtual_btn.setText("Parar mando virtual")
         self._status.setText("Virtual Xbox 360 running (games will see two pads)")
+
+    def _offer_vigem_install(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            "ViGEmBus",
+            "ViGEmBus is required for the virtual pad.\n"
+            "Download the official setup from Nefarius and install it?\n"
+            "Windows will ask for administrator permission.",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._status.setText("Downloading official ViGEmBus setup...")
+        self._virtual_btn.setEnabled(False)
+        self._dl = _InstallerDownload(self)
+        self._dl.finished_ok.connect(self._run_vigem_setup)
+        self._dl.finished_err.connect(self._vigem_download_failed)
+        self._dl.start()
+
+    def _run_vigem_setup(self, path) -> None:
+        self._virtual_btn.setEnabled(True)
+        try:
+            launch_installer(path)
+        except RuntimeError as exc:
+            self._status.setText(str(exc))
+            return
+        self._status.setText("Finish the ViGEmBus installer, then activate the virtual pad again.")
+
+    def _vigem_download_failed(self, message: str) -> None:
+        self._virtual_btn.setEnabled(True)
+        self._status.setText(message)
 
     def _add_device(self, device: DeviceIdentity) -> None:
         if device.backend == "xinput" and device.index in self._ignore_xinput:
