@@ -1,20 +1,25 @@
 from __future__ import annotations
 
+import threading
+
 from PySide6.QtCore import QObject, QPointF, QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QCheckBox,
     QMessageBox,
     QListWidget,
     QListWidgetItem,
     QProgressBar,
     QPushButton,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
 
+from engine.pipeline import Calibration, apply_calibration
 from engine.device.catalog import device_key, enumerate_all
 from engine.device.hotplug import HotplugMonitor
 from engine.device.pump import DevicePump
@@ -158,8 +163,10 @@ class LiveWindow(QWidget):
 
         self._list = QListWidget()
         self._list.currentItemChanged.connect(self._on_pick)
-        self._ls = StickView("Left stick")
-        self._rs = StickView("Right stick")
+        self._cal = Calibration.default()
+        self._cal_lock = threading.Lock()
+        self._ls = StickView("Left stick (filtered)")
+        self._rs = StickView("Right stick (filtered)")
         self._lt = QProgressBar()
         self._rt = QProgressBar()
         for bar in (self._lt, self._rt):
@@ -170,6 +177,18 @@ class LiveWindow(QWidget):
         self._virtual_btn.setCheckable(True)
         self._virtual_btn.clicked.connect(self._toggle_virtual)
         self._status = QLabel("No pad selected")
+        self._ls_dz = self._slider(0, 40, 10)
+        self._rs_dz = self._slider(0, 40, 10)
+        self._curve = self._slider(20, 200, 100)
+        self._invert_ly = QCheckBox("Invert LY")
+        self._invert_ry = QCheckBox("Invert RY")
+        self._recenter = QPushButton("Recenter sticks")
+        self._ls_dz.valueChanged.connect(self._sync_cal)
+        self._rs_dz.valueChanged.connect(self._sync_cal)
+        self._curve.valueChanged.connect(self._sync_cal)
+        self._invert_ly.toggled.connect(self._sync_cal)
+        self._invert_ry.toggled.connect(self._sync_cal)
+        self._recenter.clicked.connect(self._recenter_sticks)
 
         sticks = QHBoxLayout()
         sticks.addWidget(self._ls)
@@ -184,6 +203,15 @@ class LiveWindow(QWidget):
         right = QVBoxLayout()
         right.addLayout(sticks)
         right.addLayout(triggers)
+        right.addWidget(QLabel("LS deadzone %"))
+        right.addWidget(self._ls_dz)
+        right.addWidget(QLabel("RS deadzone %"))
+        right.addWidget(self._rs_dz)
+        right.addWidget(QLabel("Stick curve (100 = linear)"))
+        right.addWidget(self._curve)
+        right.addWidget(self._invert_ly)
+        right.addWidget(self._invert_ry)
+        right.addWidget(self._recenter)
         right.addWidget(self._virtual_btn)
         right.addWidget(self._status)
 
@@ -310,10 +338,43 @@ class LiveWindow(QWidget):
         self._pump.start()
         self._status.setText(f"Live: {device.product_name}")
 
+    def _slider(self, low: int, high: int, value: int) -> QSlider:
+        slider = QSlider(Qt.Orientation.Horizontal)
+        slider.setRange(low, high)
+        slider.setValue(value)
+        return slider
+
+    def _sync_cal(self) -> None:
+        with self._cal_lock:
+            self._cal.left.inner = self._ls_dz.value() / 100.0
+            self._cal.right.inner = self._rs_dz.value() / 100.0
+            self._cal.left.curve = max(0.2, self._curve.value() / 100.0)
+            self._cal.right.curve = self._cal.left.curve
+            self._cal.left.invert_y = self._invert_ly.isChecked()
+            self._cal.right.invert_y = self._invert_ry.isChecked()
+
+    def _filtered(self, raw: NormalizedState | None) -> NormalizedState | None:
+        if raw is None:
+            return None
+        with self._cal_lock:
+            cal = self._cal
+        return apply_calibration(raw, cal)
+
+    def _recenter_sticks(self) -> None:
+        raw = self._pump.latest() if self._pump else None
+        if raw is None:
+            return
+        with self._cal_lock:
+            self._cal.left.center_x = raw.lx
+            self._cal.left.center_y = raw.ly
+            self._cal.right.center_x = raw.rx
+            self._cal.right.center_y = raw.ry
+        self._status.setText("Stick centers captured")
+
     def _current_state(self) -> NormalizedState | None:
         if self._pump is None:
             return None
-        return self._pump.latest()
+        return self._filtered(self._pump.latest())
 
     def _stop_pump(self) -> None:
         if self._pump is not None:
@@ -335,7 +396,7 @@ class LiveWindow(QWidget):
         if not self._pump.connected():
             self._status.setText("Disconnected")
             return
-        state = self._pump.latest()
+        state = self._filtered(self._pump.latest())
         if state is None:
             return
         self._apply(state)
