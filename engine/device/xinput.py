@@ -136,11 +136,24 @@ class XInputReader:
         self.identity = identity
         self._index = identity.index
 
+    def open(self) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
     def read(self) -> NormalizedState | None:
         packet = _poll(self._index)
         if packet is None:
             return None
         return parse_state(packet)
+
+    def __enter__(self) -> XInputReader:
+        self.open()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
 
 def _print_loop() -> None:
