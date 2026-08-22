@@ -1,4 +1,5 @@
 from engine.device.catalog import enumerate_all, reader_for
+from engine.device.ds3 import Ds3Reader
 from engine.device.ds4 import Ds4Reader
 from engine.device.ds5 import Ds5Reader
 from engine.device.hid_generic import GenericHidReader, parse_report
@@ -9,6 +10,7 @@ from engine.device.xinput import XInputReader
 
 __all__ = [
     "DevicePump",
+    "Ds3Reader",
     "Ds4Reader",
     "Ds5Reader",
     "GenericHidReader",

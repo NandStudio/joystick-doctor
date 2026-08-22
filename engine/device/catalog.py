@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from engine.device.ds3 import CLONE_IDS as DS3_CLONES
+from engine.device.ds3 import PIDS as DS3_PIDS
+from engine.device.ds3 import VID as DS3_VID
+from engine.device.ds3 import Ds3Reader
+from engine.device.ds3 import enumerate_devices as enumerate_ds3
 from engine.device.ds4 import PIDS as DS4_PIDS
 from engine.device.ds4 import VID as DS4_VID
 from engine.device.ds4 import Ds4Reader
@@ -17,7 +22,7 @@ from engine.device.xinput import XInputReader
 from engine.device.xinput import enumerate_devices as enumerate_xinput
 from engine.state import DeviceIdentity
 
-Reader = Ds4Reader | Ds5Reader | GenericHidReader | SwitchProReader | XInputReader
+Reader = Ds3Reader | Ds4Reader | Ds5Reader | GenericHidReader | SwitchProReader | XInputReader
 
 
 def device_key(identity: DeviceIdentity) -> str:
@@ -44,13 +49,25 @@ def _is_xinput_hid_path(path: bytes | str) -> bool:
     return "IG_00" in text.upper()
 
 
-def _hidden_by_xinput(device: DeviceIdentity) -> bool:
+def _hidden_by_xinput(
+    device: DeviceIdentity, xinput_devs: list[DeviceIdentity]
+) -> bool:
     if device.vendor_id == 0x045E:
         return True
-    return (device.vendor_id, device.product_id) in _XINPUT_ALSO_HID
+    if (device.vendor_id, device.product_id) in _XINPUT_ALSO_HID:
+        return True
+    return any(
+        xi.vendor_id == device.vendor_id and xi.product_id == device.product_id
+        for xi in xinput_devs
+        if xi.vendor_id and xi.product_id
+    )
 
 
 def _classify_hid(device: DeviceIdentity) -> DeviceIdentity:
+    if device.vendor_id == DS3_VID and device.product_id in DS3_PIDS:
+        return replace(device, backend="ds3")
+    if (device.vendor_id, device.product_id) in DS3_CLONES:
+        return replace(device, backend="ds3")
     if device.vendor_id == DS4_VID and device.product_id in DS4_PIDS:
         return replace(device, backend="ds4")
     if device.vendor_id == DS5_VID and device.product_id in DS5_PIDS:
@@ -67,10 +84,24 @@ def enumerate_all() -> list[DeviceIdentity]:
     for hid_dev in enumerate_hid():
         if _is_xinput_hid_path(hid_dev.path):
             continue
-        if hide_xinput_hid and _hidden_by_xinput(hid_dev):
+        if hide_xinput_hid and _hidden_by_xinput(hid_dev, xinput_devs):
             continue
         devices.append(_classify_hid(hid_dev))
+    seen = {_path_key(dev.path) for dev in devices}
+    for ds3 in enumerate_ds3():
+        if _path_key(ds3.path) in seen:
+            continue
+        if hide_xinput_hid and _hidden_by_xinput(ds3, xinput_devs):
+            continue
+        devices.append(ds3)
+        seen.add(_path_key(ds3.path))
     return devices
+
+
+def _path_key(path: bytes | str) -> str:
+    if isinstance(path, bytes):
+        return path.decode("ascii", errors="replace")
+    return path
 
 
 def _enrich_xinput(device: DeviceIdentity) -> DeviceIdentity:
@@ -107,6 +138,8 @@ def hide_paths_for(identity: DeviceIdentity) -> list[bytes | str]:
 def reader_for(identity: DeviceIdentity) -> Reader:
     if identity.backend == "xinput":
         return XInputReader(identity)
+    if identity.backend == "ds3":
+        return Ds3Reader(identity)
     if identity.backend == "ds4":
         return Ds4Reader(identity)
     if identity.backend == "ds5":

@@ -50,16 +50,23 @@ def strip_report_id(data: bytes, report_id: int = 0x01) -> bytes:
     return data
 
 
-def enumerate_hid(vendor_id: int, product_ids: set[int], backend: str) -> list[DeviceIdentity]:
+def enumerate_hid(
+    vendor_id: int,
+    product_ids: set[int],
+    backend: str,
+    *,
+    require_gamepad: bool = True,
+) -> list[DeviceIdentity]:
     devices: list[DeviceIdentity] = []
     seen: set[bytes | str] = set()
     for info in hid.enumerate(vendor_id):
         if info.get("product_id") not in product_ids:
             continue
-        if info.get("usage_page") != GENERIC_DESKTOP:
-            continue
-        if info.get("usage") not in JOYSTICK_USAGES:
-            continue
+        if require_gamepad:
+            if info.get("usage_page") != GENERIC_DESKTOP:
+                continue
+            if info.get("usage") not in JOYSTICK_USAGES:
+                continue
         path = info["path"]
         if path in seen:
             continue
@@ -99,6 +106,11 @@ class HidPathReader:
         if self._dev is None:
             raise RuntimeError("HID device is not open")
         return self._dev.write(data)
+
+    def send_feature_report(self, data: bytes) -> int:
+        if self._dev is None:
+            raise RuntimeError("HID device is not open")
+        return self._dev.send_feature_report(data)
 
     def read_raw(self) -> bytes | None:
         if self._dev is None:

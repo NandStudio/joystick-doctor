@@ -4,6 +4,9 @@ import time
 
 import hid
 
+from engine.device.ds3 import CLONE_IDS as _DS3_CLONES
+from engine.device.ds3 import PIDS as _DS3_PIDS
+from engine.device.ds3 import parse_report as parse_ds3
 from engine.device.ds4 import parse_report as parse_ds4
 from engine.device.ds5 import parse_report as parse_ds5
 from engine.state import DeviceIdentity, NormalizedState
@@ -195,6 +198,10 @@ def parse_report(data: bytes, identity: DeviceIdentity | None = None) -> Normali
         return _parse_dup16(data)
     if _looks_like_dup16(data):
         return _parse_dup16(data)
+    if vid == _SONY_VID and pid in _DS3_PIDS:
+        return parse_ds3(data)
+    if (vid, pid) in _DS3_CLONES:
+        return parse_ds3(data)
     if vid == _SONY_VID and pid in _DS5_PIDS:
         return parse_ds5(data)
     if vid == _SONY_VID and pid in _DS4_PIDS:
