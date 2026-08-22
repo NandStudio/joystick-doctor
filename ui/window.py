@@ -15,12 +15,14 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QProgressBar,
     QPushButton,
+    QPlainTextEdit,
     QScrollArea,
     QSlider,
     QVBoxLayout,
     QWidget,
 )
 
+from engine.diagnose import DiagnoseRunner
 from engine.pipeline import Calibration, apply_calibration
 from engine.remap import BUTTONS, RemapConfig, RemapEngine, RemapRule
 from engine.device.catalog import device_key, enumerate_all
@@ -168,6 +170,7 @@ class LiveWindow(QWidget):
         self._list.currentItemChanged.connect(self._on_pick)
         self._cal = Calibration.default()
         self._cal_lock = threading.Lock()
+        self._diag = DiagnoseRunner()
         self._remap = RemapEngine()
         self._remap_lock = threading.Lock()
         self._ls = StickView("Left stick (filtered)")
@@ -212,6 +215,13 @@ class LiveWindow(QWidget):
         self._rule_list = QListWidget()
         self._add_rule = QPushButton("Add remap")
         self._del_rule = QPushButton("Remove remap")
+        self._diag_btn = QPushButton("Run diagnosis")
+        self._apply_diag = QPushButton("Apply recommendations")
+        self._diag_out = QPlainTextEdit()
+        self._diag_out.setReadOnly(True)
+        self._diag_out.setMaximumHeight(120)
+        self._diag_btn.clicked.connect(self._start_diag)
+        self._apply_diag.clicked.connect(self._apply_diag_recs)
         self._add_rule.clicked.connect(self._add_custom_rule)
         self._del_rule.clicked.connect(self._remove_custom_rule)
 
@@ -238,6 +248,9 @@ class LiveWindow(QWidget):
         right.addWidget(self._invert_ly)
         right.addWidget(self._invert_ry)
         right.addWidget(self._recenter)
+        right.addWidget(self._diag_btn)
+        right.addWidget(self._apply_diag)
+        right.addWidget(self._diag_out)
         right.addWidget(QLabel("Remap sources (multi-select)"))
         right.addWidget(self._src_list)
         right.addWidget(QLabel("Destination"))
@@ -454,9 +467,52 @@ class LiveWindow(QWidget):
             self._pump.stop()
             self._pump = None
 
+    def _start_diag(self) -> None:
+        if self._pump is None:
+            self._status.setText("Select a pad first")
+            return
+        self._diag.start()
+        self._diag_out.setPlainText("Diagnosis started...")
+        self._status.setText(self._diag.instruction())
+
+    def _apply_diag_recs(self) -> None:
+        result = self._diag.result
+        if result is None:
+            self._status.setText("Run diagnosis first")
+            return
+        with self._cal_lock:
+            for item in result.scores:
+                if item.name == "LS" and item.deadzone_hint is not None:
+                    self._cal.left.inner = item.deadzone_hint
+                    if item.center_x is not None:
+                        self._cal.left.center_x = item.center_x
+                        self._cal.left.center_y = item.center_y or 0.0
+                    self._ls_dz.blockSignals(True)
+                    self._ls_dz.setValue(int(round(item.deadzone_hint * 100)))
+                    self._ls_dz.blockSignals(False)
+                if item.name == "RS" and item.deadzone_hint is not None:
+                    self._cal.right.inner = item.deadzone_hint
+                    if item.center_x is not None:
+                        self._cal.right.center_x = item.center_x
+                        self._cal.right.center_y = item.center_y or 0.0
+                    self._rs_dz.blockSignals(True)
+                    self._rs_dz.setValue(int(round(item.deadzone_hint * 100)))
+                    self._rs_dz.blockSignals(False)
+        self._status.setText("Applied diagnosis recommendations")
+
     def _tick(self) -> None:
         if self._pump is None:
             return
+        raw = self._pump.latest()
+        if raw is not None and self._diag.running():
+            self._diag.feed(raw)
+            self._status.setText(self._diag.instruction())
+        elif self._diag.result is not None and self._diag_out.toPlainText().startswith("Diagnosis"):
+            result = self._diag.result
+            lines = [f"Score {result.global_score}/100"]
+            lines.extend(f"{item.name}: {item.score}  {item.detail}" for item in result.scores)
+            lines.extend(result.recommendations)
+            self._diag_out.setPlainText("\n".join(lines))
         if self._virtual.error():
             self._status.setText(f"Virtual pad: {self._virtual.error()}")
             self._virtual.stop()
