@@ -4,6 +4,8 @@ import time
 
 import hid
 
+from engine.device.ds4 import parse_report as parse_ds4
+from engine.device.ds5 import parse_report as parse_ds5
 from engine.state import DeviceIdentity, NormalizedState
 
 _GENERIC_DESKTOP = 0x01
@@ -96,54 +98,6 @@ def _payload(data: bytes) -> bytes:
     if len(data) > 8 and data[0] == 0x01:
         return data[1:]
     return data
-
-
-def _parse_ds4(payload: bytes) -> NormalizedState:
-    state = NormalizedState(timestamp=time.perf_counter())
-    if len(payload) < 10:
-        return _parse_generic_u8(payload)
-    _apply_sticks(state, payload)
-    _apply_hat(state, payload[4])
-    face = payload[4]
-    state.x = bool(face & 0x10)
-    state.a = bool(face & 0x20)
-    state.b = bool(face & 0x40)
-    state.y = bool(face & 0x80)
-    mid = payload[5]
-    state.lb = bool(mid & 0x01)
-    state.rb = bool(mid & 0x02)
-    state.back = bool(mid & 0x10)
-    state.start = bool(mid & 0x20)
-    state.ls = bool(mid & 0x40)
-    state.rs = bool(mid & 0x80)
-    state.guide = bool(payload[6] & 0x01)
-    state.lt = _trigger_u8(payload[8])
-    state.rt = _trigger_u8(payload[9])
-    return state
-
-
-def _parse_ds5(payload: bytes) -> NormalizedState:
-    state = NormalizedState(timestamp=time.perf_counter())
-    if len(payload) < 10:
-        return _parse_generic_u8(payload)
-    _apply_sticks(state, payload)
-    state.lt = _trigger_u8(payload[4])
-    state.rt = _trigger_u8(payload[5])
-    _apply_hat(state, payload[7])
-    face = payload[7]
-    state.x = bool(face & 0x10)
-    state.a = bool(face & 0x20)
-    state.b = bool(face & 0x40)
-    state.y = bool(face & 0x80)
-    mid = payload[8]
-    state.lb = bool(mid & 0x01)
-    state.rb = bool(mid & 0x02)
-    state.back = bool(mid & 0x10)
-    state.start = bool(mid & 0x20)
-    state.ls = bool(mid & 0x40)
-    state.rs = bool(mid & 0x80)
-    state.guide = bool(payload[9] & 0x01)
-    return state
 
 
 def _axis_i16(value: int) -> float:
@@ -241,12 +195,11 @@ def parse_report(data: bytes, identity: DeviceIdentity | None = None) -> Normali
         return _parse_dup16(data)
     if _looks_like_dup16(data):
         return _parse_dup16(data)
-    payload = _payload(data)
     if vid == _SONY_VID and pid in _DS5_PIDS:
-        return _parse_ds5(payload)
+        return parse_ds5(data)
     if vid == _SONY_VID and pid in _DS4_PIDS:
-        return _parse_ds4(payload)
-    return _parse_generic_u8(payload)
+        return parse_ds4(data)
+    return _parse_generic_u8(_payload(data))
 
 
 class GenericHidReader:
