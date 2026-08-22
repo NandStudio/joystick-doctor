@@ -17,8 +17,8 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QPlainTextEdit,
-    QScrollArea,
     QSlider,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -28,12 +28,13 @@ from engine.pipeline import Calibration, apply_calibration
 from engine.remap import BUTTONS, RemapConfig, RemapEngine, RemapRule
 from engine.device.catalog import device_key, enumerate_all, hide_paths_for
 from engine import hidhide
-from engine.profiles import load_profile, save_profile
+from engine.profiles import load_profile, profile_key, save_profile
 from engine.device.hotplug import HotplugMonitor
 from engine.device.pump import DevicePump
 from engine.device.xinput import enumerate_devices as enumerate_xinput
 from engine.state import DeviceIdentity, NormalizedState
-from engine.vigem import ViGEmMissingError, download_installer, launch_installer
+from engine.vigem import ViGEmMissingError, download_installer, is_installed as vigem_installed
+from engine.vigem import launch_installer
 from engine.virtual import VirtualXbox
 
 
@@ -174,7 +175,7 @@ class LiveWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Joystick Doctor")
-        self.resize(860, 520)
+        self.resize(1040, 640)
         self._pump: DevicePump | None = None
         self._virtual = VirtualXbox()
         self._ignore_xinput: set[int] = set()
@@ -203,6 +204,15 @@ class LiveWindow(QWidget):
         self._save_btn = QPushButton("Save profile")
         self._save_btn.clicked.connect(self._save_current_profile)
         self._status = QLabel("No pad selected")
+        self._status.setWordWrap(True)
+        self._vigem_status = QLabel()
+        self._hidhide_status = QLabel()
+        self._profile_lbl = QLabel("Profile: —")
+        self._profile_lbl.setWordWrap(True)
+        self._diag_step = QLabel("Idle")
+        self._diag_step.setWordWrap(True)
+        self._diag_step.setStyleSheet("font-size:16px; font-weight:600;")
+        self._refresh_drivers()
         self._ls_dz = self._slider(0, 40, 10)
         self._rs_dz = self._slider(0, 40, 10)
         self._curve = self._slider(20, 200, 100)
@@ -237,56 +247,77 @@ class LiveWindow(QWidget):
         self._apply_diag = QPushButton("Apply recommendations")
         self._diag_out = QPlainTextEdit()
         self._diag_out.setReadOnly(True)
-        self._diag_out.setMaximumHeight(120)
         self._diag_btn.clicked.connect(self._start_diag)
         self._apply_diag.clicked.connect(self._apply_diag_recs)
         self._add_rule.clicked.connect(self._add_custom_rule)
         self._del_rule.clicked.connect(self._remove_custom_rule)
 
+        live = QWidget()
+        live_lay = QVBoxLayout(live)
         sticks = QHBoxLayout()
         sticks.addWidget(self._ls)
         sticks.addWidget(self._rs)
-        triggers = QVBoxLayout()
-        triggers.addWidget(QLabel("LT"))
-        triggers.addWidget(self._lt)
-        triggers.addWidget(QLabel("RT"))
-        triggers.addWidget(self._rt)
-        triggers.addWidget(QLabel("Buttons"))
-        triggers.addWidget(self._pad)
-        right_host = QWidget()
-        right = QVBoxLayout(right_host)
-        right.addLayout(sticks)
-        right.addLayout(triggers)
-        right.addWidget(QLabel("LS deadzone %"))
-        right.addWidget(self._ls_dz)
-        right.addWidget(QLabel("RS deadzone %"))
-        right.addWidget(self._rs_dz)
-        right.addWidget(QLabel("Stick curve (100 = linear)"))
-        right.addWidget(self._curve)
-        right.addWidget(self._invert_ly)
-        right.addWidget(self._invert_ry)
-        right.addWidget(self._recenter)
-        right.addWidget(self._diag_btn)
-        right.addWidget(self._apply_diag)
-        right.addWidget(self._diag_out)
-        right.addWidget(QLabel("Remap sources (multi-select)"))
-        right.addWidget(self._src_list)
-        right.addWidget(QLabel("Destination"))
-        right.addWidget(self._dest)
-        right.addWidget(self._hold)
-        right.addWidget(self._add_rule)
-        right.addWidget(self._rule_list)
-        right.addWidget(self._del_rule)
-        right.addWidget(self._save_btn)
-        right.addWidget(self._virtual_btn)
-        right.addWidget(self._status)
+        live_lay.addLayout(sticks)
+        live_lay.addWidget(QLabel("LT"))
+        live_lay.addWidget(self._lt)
+        live_lay.addWidget(QLabel("RT"))
+        live_lay.addWidget(self._rt)
+        live_lay.addWidget(QLabel("Buttons"))
+        live_lay.addWidget(self._pad)
+        live_lay.addStretch()
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(right_host)
+        diag = QWidget()
+        diag_lay = QVBoxLayout(diag)
+        diag_lay.addWidget(QLabel("1. Keep still   2. Full stick circles   3. Full triggers"))
+        diag_lay.addWidget(self._diag_step)
+        diag_lay.addWidget(self._diag_btn)
+        diag_lay.addWidget(self._apply_diag)
+        diag_lay.addWidget(self._diag_out)
+        diag_lay.addStretch()
+
+        settings = QWidget()
+        set_lay = QVBoxLayout(settings)
+        set_lay.addWidget(QLabel("LS deadzone %"))
+        set_lay.addWidget(self._ls_dz)
+        set_lay.addWidget(QLabel("RS deadzone %"))
+        set_lay.addWidget(self._rs_dz)
+        set_lay.addWidget(QLabel("Stick curve (100 = linear)"))
+        set_lay.addWidget(self._curve)
+        set_lay.addWidget(self._invert_ly)
+        set_lay.addWidget(self._invert_ry)
+        set_lay.addWidget(self._recenter)
+        set_lay.addWidget(QLabel("Remap sources (multi-select)"))
+        set_lay.addWidget(self._src_list)
+        set_lay.addWidget(QLabel("Destination"))
+        set_lay.addWidget(self._dest)
+        set_lay.addWidget(self._hold)
+        set_lay.addWidget(self._add_rule)
+        set_lay.addWidget(self._rule_list)
+        set_lay.addWidget(self._del_rule)
+        set_lay.addStretch()
+
+        tabs = QTabWidget()
+        tabs.addTab(live, "Live")
+        tabs.addTab(diag, "Diagnosis")
+        tabs.addTab(settings, "Settings")
+
+        side = QWidget()
+        side.setMaximumWidth(280)
+        side_lay = QVBoxLayout(side)
+        side_lay.addWidget(QLabel("Device"))
+        side_lay.addWidget(self._list)
+        side_lay.addWidget(QLabel("Drivers"))
+        side_lay.addWidget(self._vigem_status)
+        side_lay.addWidget(self._hidhide_status)
+        side_lay.addWidget(self._profile_lbl)
+        side_lay.addWidget(self._save_btn)
+        side_lay.addWidget(self._virtual_btn)
+        side_lay.addWidget(self._status)
+        side_lay.addStretch()
+
         root = QHBoxLayout(self)
-        root.addWidget(self._list, 1)
-        root.addWidget(scroll, 2)
+        root.addWidget(side, 0)
+        root.addWidget(tabs, 1)
 
         self._bridge = _Bridge()
         self._bridge.added.connect(self._add_device)
@@ -321,6 +352,7 @@ class LiveWindow(QWidget):
             self._ignore_xinput.clear()
             self._virtual_btn.setText("Activar mando virtual")
             self._status.setText("Virtual pad stopped")
+            self._refresh_drivers()
             return
         if self._pump is None:
             self._virtual_btn.setChecked(False)
@@ -343,6 +375,7 @@ class LiveWindow(QWidget):
         hide_note = self._hide_physical(self._pump.identity)
         self._virtual_btn.setText("Parar mando virtual")
         self._status.setText(f"Virtual Xbox 360 running. {hide_note}")
+        self._refresh_drivers()
 
     def _offer_vigem_install(self) -> None:
         answer = QMessageBox.question(
@@ -369,6 +402,7 @@ class LiveWindow(QWidget):
             self._status.setText(str(exc))
             return
         self._status.setText("Finish the ViGEmBus installer, then activate the virtual pad again.")
+        self._refresh_drivers()
 
     def _vigem_download_failed(self, message: str) -> None:
         self._virtual_btn.setEnabled(True)
@@ -411,6 +445,19 @@ class LiveWindow(QWidget):
         loaded = self._load_current_profile(device)
         extra = "  profile loaded" if loaded else ""
         self._status.setText(f"Live: {device.product_name}{extra}")
+        self._set_profile_label(device, loaded)
+
+    def _refresh_drivers(self) -> None:
+        vigem = "OK" if vigem_installed() else "missing"
+        hide = "OK" if hidhide.is_installed() else "missing"
+        self._vigem_status.setText(f"ViGEmBus: {vigem}")
+        self._hidhide_status.setText(f"HidHide: {hide}")
+
+    def _set_profile_label(self, device: DeviceIdentity, loaded: bool) -> None:
+        if loaded:
+            self._profile_lbl.setText(f"Profile: {profile_key(device)}.json")
+        else:
+            self._profile_lbl.setText("Profile: none (defaults)")
 
     def _slider(self, low: int, high: int, value: int) -> QSlider:
         slider = QSlider(Qt.Orientation.Horizontal)
@@ -473,6 +520,7 @@ class LiveWindow(QWidget):
             self._status.setText(str(exc))
             return
         self._status.setText("Finish the HidHide installer, then activate the virtual pad again.")
+        self._refresh_drivers()
 
     def _save_current_profile(self) -> None:
         if self._pump is None:
@@ -481,6 +529,7 @@ class LiveWindow(QWidget):
             cal = self._cal
         path = save_profile(self._pump.identity, cal, self._rules)
         self._status.setText(f"Saved {path.name}")
+        self._profile_lbl.setText(f"Profile: {path.name}")
 
     def _load_current_profile(self, device: DeviceIdentity) -> bool:
         loaded = load_profile(device)
@@ -585,6 +634,7 @@ class LiveWindow(QWidget):
             return
         self._diag.start()
         self._diag_out.setPlainText("Diagnosis started...")
+        self._diag_step.setText(self._diag.instruction())
         self._status.setText(self._diag.instruction())
 
     def _apply_diag_recs(self) -> None:
@@ -619,6 +669,7 @@ class LiveWindow(QWidget):
         raw = self._pump.latest()
         if raw is not None and self._diag.running():
             self._diag.feed(raw)
+            self._diag_step.setText(self._diag.instruction())
             self._status.setText(self._diag.instruction())
         elif self._diag.result is not None and self._diag_out.toPlainText().startswith("Diagnosis"):
             result = self._diag.result
@@ -626,6 +677,7 @@ class LiveWindow(QWidget):
             lines.extend(f"{item.name}: {item.score}  {item.detail}" for item in result.scores)
             lines.extend(result.recommendations)
             self._diag_out.setPlainText("\n".join(lines))
+            self._diag_step.setText(f"Done — score {result.global_score}/100")
             self._apply_diag_recs()
         if self._virtual.error():
             self._status.setText(f"Virtual pad: {self._virtual.error()}")
