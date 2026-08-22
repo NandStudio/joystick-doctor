@@ -14,6 +14,8 @@ for package in ("PySide6", "shiboken6", "hid", "vgamepad"):
     binaries += extra_binaries
     hiddenimports += extra_hidden
 
+datas += [(str(ROOT / "assets"), "assets")]
+
 hiddenimports += [
     "engine.device.ds3",
     "engine.device.ds4",
@@ -52,6 +54,7 @@ exe = EXE(
     upx=False,
     console=False,
     disable_windowed_traceback=False,
+    icon=str(ROOT / "assets" / "icon.ico"),
 )
 coll = COLLECT(
     exe,

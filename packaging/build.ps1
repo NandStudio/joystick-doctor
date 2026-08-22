@@ -7,6 +7,7 @@ if (-not (Test-Path ".\.venv\Scripts\python.exe")) {
 }
 
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-build.txt
+.\.venv\Scripts\python.exe .\packaging\make_icon.py
 .\.venv\Scripts\pyinstaller.exe --noconfirm --clean .\packaging\joystick-doctor.spec
 
 $payload = Join-Path $root "dist\JoystickDoctor\JoystickDoctor.exe"

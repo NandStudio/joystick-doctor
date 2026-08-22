@@ -8,6 +8,7 @@
 #define MyAppURL "https://www.nandstudio.dev/"
 #define MyAppExeName "JoystickDoctor.exe"
 #define DistDir SourcePath + "..\dist\JoystickDoctor"
+#define AppIcon SourcePath + "..\assets\icon.ico"
 
 [Setup]
 AppId={{8F3C2E1A-6B47-4D09-9C5A-1E7D2A4B9083}}
@@ -28,6 +29,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=6.1sp1
 UninstallDisplayIcon={app}\{#MyAppExeName}
+SetupIconFile={#AppIcon}
 CloseApplications=yes
 SetupLogging=yes
 
