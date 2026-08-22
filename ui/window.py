@@ -211,7 +211,7 @@ class LiveWindow(QWidget):
             bar.setRange(0, 100)
             bar.setTextVisible(True)
         self._pad = ButtonPad()
-        self._virtual_btn = QPushButton("Activar mando virtual")
+        self._virtual_btn = QPushButton("Enable virtual controller")
         self._virtual_btn.setCheckable(True)
         self._virtual_btn.clicked.connect(self._toggle_virtual)
         self._save_btn = QPushButton("Save profile")
@@ -366,7 +366,7 @@ class LiveWindow(QWidget):
             self._virtual.stop()
             self._unhide_physical()
             self._ignore_xinput.clear()
-            self._virtual_btn.setText("Activar mando virtual")
+            self._virtual_btn.setText("Enable virtual controller")
             self._status.setText("Virtual pad stopped")
             self._refresh_drivers()
             return
@@ -746,7 +746,7 @@ class LiveWindow(QWidget):
             self._status.setText(f"Virtual pad: {self._virtual.error()}")
             self._virtual.stop()
             self._virtual_btn.setChecked(False)
-            self._virtual_btn.setText("Activar mando virtual")
+            self._virtual_btn.setText("Enable virtual controller")
             return
         if self._pump.error():
             self._status.setText(str(self._pump.error()))
