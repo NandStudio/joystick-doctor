@@ -10,7 +10,7 @@
 #define DistDir SourcePath + "..\dist\JoystickDoctor"
 
 [Setup]
-AppId={8F3C2E1A-6B47-4D09-9C5A-1E7D2A4B9083}
+AppId={{8F3C2E1A-6B47-4D09-9C5A-1E7D2A4B9083}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
