@@ -61,7 +61,7 @@ def _classify_hid(device: DeviceIdentity) -> DeviceIdentity:
 
 
 def enumerate_all() -> list[DeviceIdentity]:
-    xinput_devs = list(enumerate_xinput())
+    xinput_devs = [_enrich_xinput(dev) for dev in enumerate_xinput()]
     hide_xinput_hid = bool(xinput_devs)
     devices = list(xinput_devs)
     for hid_dev in enumerate_hid():
@@ -71,6 +71,37 @@ def enumerate_all() -> list[DeviceIdentity]:
             continue
         devices.append(_classify_hid(hid_dev))
     return devices
+
+
+def _enrich_xinput(device: DeviceIdentity) -> DeviceIdentity:
+    if device.vendor_id:
+        return device
+    ig = [dev for dev in enumerate_hid() if _is_xinput_hid_path(dev.path)]
+    if len(ig) != 1:
+        return device
+    extra = ig[0]
+    return replace(
+        device,
+        vendor_id=extra.vendor_id,
+        product_id=extra.product_id,
+        product_name=f"{extra.product_name} (XInput)",
+    )
+
+
+def hide_paths_for(identity: DeviceIdentity) -> list[bytes | str]:
+    if identity.backend != "xinput":
+        return [identity.path]
+    matches = []
+    for hid_dev in enumerate_hid():
+        if not _is_xinput_hid_path(hid_dev.path):
+            continue
+        if identity.vendor_id and (
+            hid_dev.vendor_id != identity.vendor_id
+            or hid_dev.product_id != identity.product_id
+        ):
+            continue
+        matches.append(hid_dev.path)
+    return matches
 
 
 def reader_for(identity: DeviceIdentity) -> Reader:

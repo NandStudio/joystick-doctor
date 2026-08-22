@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import threading
 
 from PySide6.QtCore import QObject, QPointF, QThread, QTimer, Qt, Signal
@@ -25,7 +26,9 @@ from PySide6.QtWidgets import (
 from engine.diagnose import DiagnoseRunner
 from engine.pipeline import Calibration, apply_calibration
 from engine.remap import BUTTONS, RemapConfig, RemapEngine, RemapRule
-from engine.device.catalog import device_key, enumerate_all
+from engine.device.catalog import device_key, enumerate_all, hide_paths_for
+from engine import hidhide
+from engine.profiles import load_profile, save_profile
 from engine.device.hotplug import HotplugMonitor
 from engine.device.pump import DevicePump
 from engine.device.xinput import enumerate_devices as enumerate_xinput
@@ -46,6 +49,17 @@ class _InstallerDownload(QThread):
     def run(self) -> None:
         try:
             self.finished_ok.emit(download_installer())
+        except Exception as exc:
+            self.finished_err.emit(str(exc))
+
+
+class _HidHideDownload(QThread):
+    finished_ok = Signal(object)
+    finished_err = Signal(str)
+
+    def run(self) -> None:
+        try:
+            self.finished_ok.emit(hidhide.download_installer())
         except Exception as exc:
             self.finished_err.emit(str(exc))
 
@@ -164,6 +178,8 @@ class LiveWindow(QWidget):
         self._pump: DevicePump | None = None
         self._virtual = VirtualXbox()
         self._ignore_xinput: set[int] = set()
+        self._hidden_instances: list[str] = []
+        self._loading_profile = False
         self._devices: dict[str, DeviceIdentity] = {}
 
         self._list = QListWidget()
@@ -184,6 +200,8 @@ class LiveWindow(QWidget):
         self._virtual_btn = QPushButton("Activar mando virtual")
         self._virtual_btn.setCheckable(True)
         self._virtual_btn.clicked.connect(self._toggle_virtual)
+        self._save_btn = QPushButton("Save profile")
+        self._save_btn.clicked.connect(self._save_current_profile)
         self._status = QLabel("No pad selected")
         self._ls_dz = self._slider(0, 40, 10)
         self._rs_dz = self._slider(0, 40, 10)
@@ -259,6 +277,7 @@ class LiveWindow(QWidget):
         right.addWidget(self._add_rule)
         right.addWidget(self._rule_list)
         right.addWidget(self._del_rule)
+        right.addWidget(self._save_btn)
         right.addWidget(self._virtual_btn)
         right.addWidget(self._status)
 
@@ -290,6 +309,7 @@ class LiveWindow(QWidget):
     def closeEvent(self, event) -> None:
         self._timer.stop()
         self._virtual.stop()
+        self._unhide_physical()
         self._stop_pump()
         self._monitor.stop()
         super().closeEvent(event)
@@ -297,6 +317,7 @@ class LiveWindow(QWidget):
     def _toggle_virtual(self, checked: bool) -> None:
         if not checked:
             self._virtual.stop()
+            self._unhide_physical()
             self._ignore_xinput.clear()
             self._virtual_btn.setText("Activar mando virtual")
             self._status.setText("Virtual pad stopped")
@@ -319,8 +340,9 @@ class LiveWindow(QWidget):
             return
         after = {dev.index for dev in enumerate_xinput() if dev.index is not None}
         self._ignore_xinput = after - before
+        hide_note = self._hide_physical(self._pump.identity)
         self._virtual_btn.setText("Parar mando virtual")
-        self._status.setText("Virtual Xbox 360 running (games will see two pads)")
+        self._status.setText(f"Virtual Xbox 360 running. {hide_note}")
 
     def _offer_vigem_install(self) -> None:
         answer = QMessageBox.question(
@@ -386,13 +408,100 @@ class LiveWindow(QWidget):
         self._stop_pump()
         self._pump = DevicePump(device)
         self._pump.start()
-        self._status.setText(f"Live: {device.product_name}")
+        loaded = self._load_current_profile(device)
+        extra = "  profile loaded" if loaded else ""
+        self._status.setText(f"Live: {device.product_name}{extra}")
 
     def _slider(self, low: int, high: int, value: int) -> QSlider:
         slider = QSlider(Qt.Orientation.Horizontal)
         slider.setRange(low, high)
         slider.setValue(value)
         return slider
+
+    def _hide_physical(self, identity: DeviceIdentity) -> str:
+        if not hidhide.is_installed():
+            self._offer_hidhide_install()
+            return "HidHide missing: games will see two pads."
+        try:
+            hidhide.register_app(sys.executable)
+            hidden = []
+            for path in hide_paths_for(identity):
+                instance = hidhide.hidapi_to_instance(path)
+                hidhide.hide_device(instance)
+                hidden.append(instance)
+            hidhide.cloak(True)
+            self._hidden_instances = hidden
+            if not hidden:
+                return "HidHide on, but no HID path to hide (XInput-only)."
+            return "Physical pad hidden from other apps."
+        except hidhide.HidHideError as exc:
+            return f"HidHide failed ({exc}). Games may see two pads."
+
+    def _unhide_physical(self) -> None:
+        for instance in self._hidden_instances:
+            try:
+                hidhide.unhide_device(instance)
+            except hidhide.HidHideError:
+                pass
+        if self._hidden_instances:
+            try:
+                hidhide.cloak(False)
+            except hidhide.HidHideError:
+                pass
+        self._hidden_instances = []
+
+    def _offer_hidhide_install(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            "HidHide",
+            "HidHide hides the physical pad so games only see the virtual one.\n"
+            "Download the official setup from Nefarius and install it?\n"
+            "Windows will ask for administrator permission.",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._status.setText("Downloading official HidHide setup...")
+        self._hh_dl = _HidHideDownload(self)
+        self._hh_dl.finished_ok.connect(self._run_hidhide_setup)
+        self._hh_dl.finished_err.connect(self._status.setText)
+        self._hh_dl.start()
+
+    def _run_hidhide_setup(self, path) -> None:
+        try:
+            hidhide.launch_installer(path)
+        except hidhide.HidHideError as exc:
+            self._status.setText(str(exc))
+            return
+        self._status.setText("Finish the HidHide installer, then activate the virtual pad again.")
+
+    def _save_current_profile(self) -> None:
+        if self._pump is None:
+            return
+        with self._cal_lock:
+            cal = self._cal
+        path = save_profile(self._pump.identity, cal, self._rules)
+        self._status.setText(f"Saved {path.name}")
+
+    def _load_current_profile(self, device: DeviceIdentity) -> bool:
+        loaded = load_profile(device)
+        if loaded is None:
+            return False
+        cal, rules = loaded
+        self._loading_profile = True
+        with self._cal_lock:
+            self._cal = cal
+        self._ls_dz.setValue(int(round(cal.left.inner * 100)))
+        self._rs_dz.setValue(int(round(cal.right.inner * 100)))
+        self._curve.setValue(int(round(cal.left.curve * 100)))
+        self._invert_ly.setChecked(cal.left.invert_y)
+        self._invert_ry.setChecked(cal.right.invert_y)
+        self._rules = list(rules)
+        self._rule_list.clear()
+        for rule in self._rules:
+            self._rule_list.addItem(self._rule_label(rule))
+        self._sync_remap()
+        self._loading_profile = False
+        return True
 
     def _sync_cal(self) -> None:
         with self._cal_lock:
@@ -437,6 +546,7 @@ class LiveWindow(QWidget):
         self._rules.append(rule)
         self._rule_list.addItem(self._rule_label(rule))
         self._sync_remap()
+        self._save_current_profile()
 
     def _remove_custom_rule(self) -> None:
         row = self._rule_list.currentRow()
@@ -445,6 +555,7 @@ class LiveWindow(QWidget):
         self._rule_list.takeItem(row)
         del self._rules[row]
         self._sync_remap()
+        self._save_current_profile()
 
     def _recenter_sticks(self) -> None:
         raw = self._pump.latest() if self._pump else None
@@ -456,6 +567,7 @@ class LiveWindow(QWidget):
             self._cal.right.center_x = raw.rx
             self._cal.right.center_y = raw.ry
         self._status.setText("Stick centers captured")
+        self._save_current_profile()
 
     def _current_state(self) -> NormalizedState | None:
         if self._pump is None:
@@ -499,6 +611,7 @@ class LiveWindow(QWidget):
                     self._rs_dz.setValue(int(round(item.deadzone_hint * 100)))
                     self._rs_dz.blockSignals(False)
         self._status.setText("Applied diagnosis recommendations")
+        self._save_current_profile()
 
     def _tick(self) -> None:
         if self._pump is None:
