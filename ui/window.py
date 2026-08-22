@@ -513,6 +513,7 @@ class LiveWindow(QWidget):
             lines.extend(f"{item.name}: {item.score}  {item.detail}" for item in result.scores)
             lines.extend(result.recommendations)
             self._diag_out.setPlainText("\n".join(lines))
+            self._apply_diag_recs()
         if self._virtual.error():
             self._status.setText(f"Virtual pad: {self._virtual.error()}")
             self._virtual.stop()
