@@ -11,32 +11,8 @@ App de escritorio para Windows: diagnosticar y calibrar un mando, aplicar deadzo
 
 La app puede descargar e iniciar los instaladores oficiales de Nefarius si faltan (ViGEmBus, HidHide). Si detecta un DualShock 3 oficial y no hay driver, ofrece **DsHidMini** en Windows 10/11 o **ScpToolkit** en Windows 7/8 (setup archivado de Nefarius). XInput se lee con `xinput1_4.dll`; no hace falta paquete extra.
 
-## Setup
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python main.py
-```
-
 Dependencias: `hidapi`, `vgamepad`, `PySide6`.
 
-## Empaquetar (Windows)
-
-1. [Inno Setup 6](https://jrsoftware.org/isinfo.php) (incluye `ISCC.exe`).
-2. PyInstaller arma `dist\JoystickDoctor\` (exe + DLLs de Qt/hidapi/ViGEmClient).
-3. Inno envuelve esa carpeta en `dist\JoystickDoctorSetup-0.1.0.exe`.
-
-```powershell
-.\packaging\build.ps1
-```
-
-Distribuí el setup de Inno, no el zip suelto. El instalador **no** mete drivers de kernel; ViGEmBus / HidHide / DsHidMini se ofrecen desde la app.
-
-La versión del setup está en `packaging\joystick-doctor.iss` (`#define MyAppVersion`). Los perfiles en `%LOCALAPPDATA%\joystick-doctor` no se borran al desinstalar.
-
-Script: `packaging\joystick-doctor.iss`. Build tools Python: `pip install -r requirements-build.txt`.
 
 ## Mandos
 
