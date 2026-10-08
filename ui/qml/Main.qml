@@ -108,6 +108,14 @@ Window {
         visible: app.page === "sistema"
     }
 
+    Ajustes {
+        anchors.left: sideBar.right
+        anchors.right: parent.right
+        anchors.top: titleBar.bottom
+        anchors.bottom: statusBar.top
+        visible: app.page === "ajustes"
+    }
+
     StatusBar {
         id: statusBar
         anchors.left: parent.left

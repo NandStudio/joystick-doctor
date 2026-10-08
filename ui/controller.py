@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import threading
 import time
@@ -15,7 +16,7 @@ from engine.device.pump import DevicePump
 from engine.device.xinput import enumerate_devices as enumerate_xinput
 from engine.guided import GuidedSession
 from engine.pipeline import Calibration, StickCal, apply_calibration, apply_stick
-from engine.prefs import load_language
+from engine.prefs import load_language, save_language
 from engine.profiles import ProfileReadError, load_profile, profile_key, profile_path, save_profile
 from engine.remap import BUTTONS, RemapConfig, RemapEngine, RemapRule
 from engine.state import DeviceIdentity, NormalizedState
@@ -72,7 +73,9 @@ class AppController(QObject):
         self._display_family = "Caprasimo"
         self._body_family = "Figtree"
         self._strong_family = "Figtree SemiBold"
-        set_language(load_language())
+        self._lang_pref = load_language()
+        self._settings_error = False
+        set_language(self._lang_pref)
 
         self._page = "diagnostico"
         self._devices: dict[str, DeviceIdentity] = {}
@@ -157,6 +160,7 @@ class AppController(QObject):
             {"id": "curvas", "label": tr("nav_curvas")},
             {"id": "remap", "label": tr("nav_remap")},
             {"id": "sistema", "label": tr("nav_sistema")},
+            {"id": "ajustes", "label": tr("nav_ajustes")},
         ]
 
     def _device_rows(self) -> list[dict[str, object]]:
@@ -801,6 +805,48 @@ class AppController(QObject):
     def _hold_names(self) -> list:
         return [tr("hold_none")] + [tr("hold_item", label=_button_label(key)) for key in BUTTONS]
 
+    @Slot(str)
+    def setLanguagePref(self, pref: str) -> None:
+        if pref not in ("system", "en", "es"):
+            return
+        previous = self._lang_pref
+        try:
+            save_language(pref)
+        except OSError:
+            self._lang_pref = previous
+            self._settings_error = True
+            self.languageChanged.emit()
+            self._emit_chrome()
+            return
+        self._settings_error = False
+        self._lang_pref = pref
+        set_language(pref)
+        self._lang_tick += 1
+        self._vigem_word = ""
+        self._hid_word = ""
+        self._refresh_drivers()
+        self.languageChanged.emit()
+        self._emit_chrome()
+        self.curveChanged.emit()
+        self.remapChanged.emit()
+        self.frame.emit()
+
+    @Slot()
+    def openConfigFolder(self) -> None:
+        from pathlib import Path
+
+        folder = Path.home() / "AppData" / "Local" / "joystick-doctor"
+        folder.mkdir(parents=True, exist_ok=True)
+        os.startfile(folder)
+
+    def _language_pref(self) -> str:
+        return self._lang_pref
+
+    def _settings_state(self) -> str:
+        if self._settings_error:
+            return "error"
+        return "ready"
+
     @Slot()
     def dismissFirstRun(self) -> None:
         self._first_run_dismissed = True
@@ -1292,3 +1338,5 @@ class AppController(QObject):
     ps3Name = Property(str, _ps3_name, notify=chromeChanged)
     uptimeText = Property(str, _uptime_text, notify=chromeChanged)
     detectedPad = Property(str, _detected_pad, notify=chromeChanged)
+    languagePref = Property(str, _language_pref, notify=languageChanged)
+    settingsState = Property(str, _settings_state, notify=languageChanged)
