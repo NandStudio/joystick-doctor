@@ -1,6 +1,7 @@
 .vscode
-# Track .cursor/rules/; keep local docs out of git
+# Track .cursor/rules/; keep local docs and the slice-commit rule out of git
 .cursor/docs/
+.cursor/rules/commit-slices.mdc
 .venv
 __pycache__
 build/
