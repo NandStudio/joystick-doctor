@@ -123,7 +123,7 @@ Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: nav.modelData.id === "diagnostico"
                     }
-                    MiraMark {
+                    CrosshairMark {
                         width: 16
                         height: 16
                         mark: nav.chosen ? theme.ink : theme.stroke
