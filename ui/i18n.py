@@ -276,6 +276,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "log_virtual_off": "Virtual Xbox 360 stopped.",
         "log_profile": "Profile saved: {name}",
         "log_error": "{text}",
+        "nav_vibracion": "Vibration",
+        "rumble_title": "Vibration and triggers",
+        "rumble_sub": "Rumble travels from the game to the physical pad through ViGEmBus.",
+        "rumble_none": "This pad has no rumble output.",
+        "rumble_no_pad": "There is no physical pad to vibrate.",
     },
     "es": {
         "tab_live": "En vivo",
@@ -545,6 +550,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "log_virtual_off": "Xbox 360 virtual detenido.",
         "log_profile": "Perfil guardado: {name}",
         "log_error": "{text}",
+        "nav_vibracion": "Vibración",
+        "rumble_title": "Vibración y gatillos",
+        "rumble_sub": "El rumble viaja del juego al mando físico pasando por ViGEmBus.",
+        "rumble_none": "Este mando no tiene salida de rumble.",
+        "rumble_no_pad": "No hay mando físico que vibre.",
     },
 }
 

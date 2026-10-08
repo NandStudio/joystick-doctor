@@ -30,7 +30,14 @@ Un DualShock 3 oficial (`054C:0268`) en Windows 10/11 suele necesitar [DsHidMini
 ## Uso
 
 1. Conectar el mando. Si hay más de uno, elegirlo en la barra lateral.
-2. **Diagnóstico** muestra la entrada física o la salida del Xbox 360 virtual. **Calibrar este mando** guarda los límites reales. **Deadzone y curvas** aplica la gamma al virtual.
-3. **Activar mando virtual**, en la barra de estado. HidHide oculta el físico si está instalado.
+2. **Diagnóstico** muestra la entrada física o la salida del Xbox 360 virtual.
+3. **Calibración** guarda los límites reales en cinco pasos.
+4. **Deadzone y curvas** aplica la gamma al virtual.
+5. **Remap** decide qué botón físico ve el juego.
+6. **Sistema** revisa ViGEmBus e HidHide y activa el Xbox 360 virtual. HidHide oculta el físico si está instalado.
+7. **Ajustes** cambia el idioma y abre la carpeta de configuración.
+8. **Perfiles** guarda ese conjunto para el mando abierto.
+9. **Registro** lista los eventos del puente.
+10. **Vibración** dice si este mando no tiene salida de rumble.
 
 Los perfiles se guardan en `%LOCALAPPDATA%\joystick-doctor\profiles\`.
