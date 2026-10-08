@@ -5,7 +5,7 @@ import "../controls"
 Rectangle {
     anchors.fill: parent
     visible: app.firstRunOpen
-    color: Qt.rgba(43 / 255, 43 / 255, 43 / 255, 0.5)
+    color: theme.veil
 
     Rectangle {
         id: card
@@ -20,7 +20,7 @@ Rectangle {
             anchors.fill: parent
             anchors.topMargin: 12
             radius: theme.radiusCard
-            color: Qt.rgba(0.118, 0.118, 0.118, 0.22)
+            color: theme.shadow
         }
 
         ColumnLayout {

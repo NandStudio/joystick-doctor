@@ -94,7 +94,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         visible: app.remapEditorOpen
-        color: Qt.rgba(43 / 255, 43 / 255, 43 / 255, 0.5)
+        color: theme.veil
         Rectangle {
             anchors.centerIn: parent
             width: Math.min(640, parent.width - 80)

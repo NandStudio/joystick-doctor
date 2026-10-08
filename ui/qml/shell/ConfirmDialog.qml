@@ -5,7 +5,7 @@ import "../controls"
 Rectangle {
     id: root
     anchors.fill: parent
-    color: Qt.rgba(43 / 255, 43 / 255, 43 / 255, 0.5)
+    color: theme.veil
     visible: app.confirmOpen
     focus: visible
 

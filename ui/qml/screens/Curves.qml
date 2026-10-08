@@ -50,11 +50,15 @@ Item {
                     id: plot
                     anchors.fill: parent
                     anchors.margins: 18
+                    property color axis: theme.stroke
+                    property color curve: theme.ink
+                    onAxisChanged: requestPaint()
+                    onCurveChanged: requestPaint()
                     onPaint: {
                         var ctx = getContext("2d")
                         ctx.reset()
                         var pts = app.curvePoints
-                        ctx.strokeStyle = theme.stroke
+                        ctx.strokeStyle = axis
                         ctx.lineWidth = 1
                         ctx.beginPath()
                         ctx.moveTo(0, height)
@@ -64,7 +68,7 @@ Item {
                         ctx.stroke()
                         if (!pts || pts.length < 2)
                             return
-                        ctx.strokeStyle = theme.ink
+                        ctx.strokeStyle = curve
                         ctx.lineWidth = 2.75
                         ctx.lineJoin = "round"
                         ctx.lineCap = "round"

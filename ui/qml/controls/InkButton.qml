@@ -24,7 +24,7 @@ Button {
         Rectangle {
             anchors.fill: parent
             radius: theme.radiusControl
-            color: control.down ? "#2b2b2b" : theme.ink
+            color: control.down ? theme.inkPressed : theme.ink
         }
         Rectangle {
             anchors.fill: parent

@@ -31,7 +31,7 @@ Button {
                 if (control.chosen)
                     return theme.wash
                 if (control.hovered || control.down)
-                    return Qt.rgba(0.118, 0.118, 0.118, 0.07)
+                    return theme.hoverWash
                 return "transparent"
             }
             border.width: control.framed ? 1 : 0

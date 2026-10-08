@@ -20,7 +20,7 @@ def main() -> None:
         app.setWindowIcon(icon)
     engine = QQmlApplicationEngine()
     palette = Palette(engine)
-    controller = AppController(engine)
+    controller = AppController(engine, palette)
     engine.rootContext().setContextProperty("theme", palette)
     engine.rootContext().setContextProperty("app", controller)
 

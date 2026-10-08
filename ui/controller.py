@@ -16,7 +16,7 @@ from engine.device.pump import DevicePump
 from engine.device.xinput import enumerate_devices as enumerate_xinput
 from engine.guided import GuidedSession
 from engine.pipeline import Calibration, StickCal, apply_calibration, apply_stick
-from engine.prefs import load_language, save_language
+from engine.prefs import load_language, load_theme, save_language, save_theme
 from engine.profiles import ProfileReadError, load_profile, profile_key, profile_path, save_profile
 from engine.remap import BUTTONS, RemapConfig, RemapEngine, RemapRule
 from engine.state import DeviceIdentity, NormalizedState
@@ -25,6 +25,7 @@ from engine.vigem import launch_installer
 from engine.virtual import VirtualXbox
 from ui.assets import bundle_root
 from ui.i18n import set_language, tr
+from ui.theme import Palette
 
 
 def _button_label(key: str) -> str:
@@ -68,7 +69,7 @@ class AppController(QObject):
     remapChanged = Signal()
     logChanged = Signal()
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent=None, palette: Palette | None = None) -> None:
         super().__init__(parent)
         self._lang_tick = 0
         self._display_family = "Caprasimo"
@@ -76,6 +77,8 @@ class AppController(QObject):
         self._strong_family = "Figtree SemiBold"
         self._lang_pref = load_language()
         self._settings_error = False
+        self._palette = palette or Palette(self)
+        self._palette.set_dark(load_theme() == "dark")
         set_language(self._lang_pref)
 
         self._page = "diagnostico"
@@ -925,6 +928,22 @@ class AppController(QObject):
         if not self._log:
             return "empty"
         return "ready"
+
+    @Slot(str)
+    def setTheme(self, mode: str) -> None:
+        if mode not in ("light", "dark"):
+            return
+        if self._palette is None or (mode == "dark") == self._palette.is_dark():
+            return
+        try:
+            save_theme(mode)
+        except OSError:
+            self._settings_error = True
+            self.languageChanged.emit()
+            return
+        self._settings_error = False
+        self._palette.set_dark(mode == "dark")
+        self.languageChanged.emit()
 
     @Slot()
     def openConfigFolder(self) -> None:
