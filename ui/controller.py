@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import threading
+from datetime import datetime
 
 from PySide6.QtCore import Property, QObject, QThread, QTimer, QUrl, Signal, Slot
 
@@ -10,9 +11,10 @@ from engine.device.catalog import device_key, enumerate_all, hide_paths_for
 from engine.device.hotplug import HotplugMonitor
 from engine.device.pump import DevicePump
 from engine.device.xinput import enumerate_devices as enumerate_xinput
+from engine.guided import GuidedSession
 from engine.pipeline import Calibration, apply_calibration
 from engine.prefs import load_language
-from engine.profiles import load_profile, profile_key
+from engine.profiles import ProfileReadError, load_profile, profile_key, profile_path, save_profile
 from engine.remap import RemapConfig, RemapEngine, RemapRule
 from engine.state import DeviceIdentity, NormalizedState
 from engine.vigem import ViGEmMissingError, download_installer, is_installed as vigem_installed
@@ -48,6 +50,7 @@ class AppController(QObject):
     frame = Signal()
     languageChanged = Signal()
     fontFamiliesChanged = Signal()
+    guideChanged = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -74,6 +77,9 @@ class AppController(QObject):
 
         self._cal = Calibration.default()
         self._cal_lock = threading.Lock()
+        self._measured = {"at": "", "summary": ""}
+        self._profile_error = False
+        self._guide = GuidedSession()
         self._rules: list[RemapRule] = []
         self._remap = RemapEngine()
         self._remap_lock = threading.Lock()
@@ -120,7 +126,10 @@ class AppController(QObject):
         self._driver_timer.start()
 
     def _destinations(self) -> list[dict[str, str]]:
-        return [{"id": "diagnostico", "label": tr("nav_diagnostico")}]
+        return [
+            {"id": "diagnostico", "label": tr("nav_diagnostico")},
+            {"id": "calibracion", "label": tr("nav_calibracion")},
+        ]
 
     def _device_rows(self) -> list[dict[str, object]]:
         open_key = device_key(self._pump.identity) if self._pump else ""
@@ -173,8 +182,11 @@ class AppController(QObject):
             return self._remap.apply(calibrated)
 
     def _load_profile(self, device: DeviceIdentity) -> None:
-        loaded = load_profile(device)
-        if loaded is None:
+        try:
+            loaded = load_profile(device)
+        except ProfileReadError:
+            self._profile_error = True
+            self._measured = {"at": "", "summary": ""}
             with self._cal_lock:
                 self._cal = Calibration.default()
             self._rules = []
@@ -182,13 +194,24 @@ class AppController(QObject):
                 self._remap = RemapEngine()
             self._profile_name = None
             return
-        cal, rules = loaded
+        self._profile_error = False
+        if loaded is None:
+            with self._cal_lock:
+                self._cal = Calibration.default()
+            self._rules = []
+            with self._remap_lock:
+                self._remap = RemapEngine()
+            self._profile_name = None
+            self._measured = {"at": "", "summary": ""}
+            return
+        cal, rules, measured = loaded
         with self._cal_lock:
             self._cal = cal
         self._rules = list(rules)
         with self._remap_lock:
             self._remap = RemapEngine(RemapConfig(list(self._rules)))
         self._profile_name = f"{profile_key(device)}.json"
+        self._measured = measured
 
     def _stop_pump(self) -> None:
         if self._pump is not None:
@@ -354,6 +377,9 @@ class AppController(QObject):
             self._emit_chrome()
         if self._pump.error() or not self._pump.connected():
             detail = str(self._pump.error()) if self._pump.error() else tr("lost_device")
+            if self._guide.active:
+                self._guide.stop()
+                self.guideChanged.emit()
             if self._session != "error" or self._session_detail != detail:
                 self._session = "error"
                 self._session_detail = detail
@@ -366,6 +392,9 @@ class AppController(QObject):
             self._session = "ready"
             self._session_detail = ""
             self._emit_chrome()
+        if self._guide.active:
+            self._guide.feed(raw)
+            self.guideChanged.emit()
         shown = raw if self._view == "physical" else self._filtered(raw)
         self._read_pad(shown)
         packets, gap = self._pump.traffic()
@@ -467,14 +496,176 @@ class AppController(QObject):
     def confirmNo(self) -> None:
         self._close_confirm()
 
+    def _write_profile(self, clear_measured: bool = False) -> None:
+        if self._pump is None:
+            return
+        with self._cal_lock:
+            cal = self._cal
+        path = save_profile(
+            self._pump.identity,
+            cal,
+            self._rules,
+            measured=None if clear_measured else self._measured,
+            clear_measured=clear_measured,
+        )
+        self._profile_name = path.name
+        self._profile_error = False
+
+    @Slot()
+    def startGuide(self) -> None:
+        if self._pump is None or self._session != "ready":
+            self._set_notice(tr("need_pad"))
+            return
+        self._guide.start()
+        self.guideChanged.emit()
+
+    @Slot()
+    def exitGuide(self) -> None:
+        if not self._guide.active:
+            return
+        self._guide.stop()
+        self.guideChanged.emit()
+
+    @Slot()
+    def guideBack(self) -> None:
+        self._guide.back()
+        self.guideChanged.emit()
+
+    @Slot()
+    def guideNext(self) -> None:
+        result = self._guide.advance()
+        if result == "done":
+            self._save_guide()
+            return
+        self.guideChanged.emit()
+
+    def _save_guide(self) -> None:
+        if self._pump is None:
+            self._guide.stop()
+            self.guideChanged.emit()
+            return
+        with self._cal_lock:
+            self._guide.apply(self._cal)
+        self._measured = {
+            "at": datetime.now().isoformat(timespec="seconds"),
+            "summary": self._guide.summary(),
+        }
+        self._write_profile()
+        self._guide.stop()
+        self._set_notice(tr("guide_saved"))
+        self.guideChanged.emit()
+        self.frame.emit()
+
+    @Slot()
+    def restoreFactory(self) -> None:
+        if self._pump is None:
+            self._set_notice(tr("need_pad"))
+            return
+        with self._cal_lock:
+            self._cal = Calibration.default()
+        self._measured = {"at": "", "summary": ""}
+        self._write_profile(clear_measured=True)
+        self._set_notice(tr("factory_done"))
+        self.guideChanged.emit()
+        self.frame.emit()
+
+    @Slot()
+    def exportReport(self) -> None:
+        if self._pump is None or not self._measured.get("at"):
+            self._set_notice(tr("no_export"))
+            return
+        target = profile_path(self._pump.identity).with_name(
+            f"{profile_key(self._pump.identity)}-calibration.txt"
+        )
+        lines = [
+            self._measured.get("at", ""),
+            self._measured.get("summary", ""),
+        ]
+        target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        self._set_notice(tr("export_done", name=target.name))
+
     @Slot()
     def shutdown(self) -> None:
+        self._guide.stop()
         self._timer.stop()
         self._driver_timer.stop()
         self._virtual.stop()
         self._unhide_physical()
         self._stop_pump()
         self._monitor.stop()
+
+    def _guide_open(self) -> bool:
+        return self._guide.active
+
+    def _guide_index(self) -> int:
+        return self._guide.index
+
+    def _guide_step_text(self) -> str:
+        return tr("guide_step", n=self._guide.index + 1)
+
+    def _guide_heading(self) -> str:
+        return tr(f"step{self._guide.index + 1}_title")
+
+    def _guide_body(self) -> str:
+        return tr(f"step{self._guide.index + 1}_body")
+
+    def _guide_measure_text(self) -> str:
+        found = self._guide.measure()
+        if not found:
+            return ""
+        key, params = found
+        return tr(key, **params)
+
+    def _guide_error_text(self) -> str:
+        if not self._guide.error:
+            return ""
+        return tr(f"err_{self._guide.error}")
+
+    def _guide_phase_value(self) -> str:
+        if not self._guide.active:
+            return "empty"
+        return self._guide.phase()
+
+    def _guide_focus(self) -> str:
+        return {
+            "rest": "all",
+            "left": "left",
+            "right": "right",
+            "triggers": "triggers",
+            "buttons": "buttons",
+        }.get(self._guide.step(), "all")
+
+    def _guide_next_label(self) -> str:
+        if self._guide.index >= 4:
+            return tr("guide_save")
+        return tr("guide_next")
+
+    def _guide_show_back(self) -> bool:
+        return self._guide.index > 0
+
+    def _cal_state(self) -> str:
+        if self._session == "loading":
+            return "loading"
+        if self._profile_error:
+            return "error"
+        if self._measured.get("at"):
+            return "ready"
+        return "empty"
+
+    def _cal_word(self) -> str:
+        if self._cal_state() == "ready":
+            return tr("cal_valid")
+        return ""
+
+    def _cal_detail(self) -> str:
+        state = self._cal_state()
+        if state == "loading":
+            return tr("cal_loading")
+        if state == "error":
+            return tr("cal_read_error")
+        if state == "ready":
+            return f"{self._measured.get('summary', '')}  {self._measured.get('at', '')}"
+        return tr("cal_empty")
 
     def _lang_tick_value(self) -> int:
         return self._lang_tick
@@ -629,3 +820,17 @@ class AppController(QObject):
     confirmOpen = Property(bool, _confirm_open_value, notify=chromeChanged)
     confirmTitle = Property(str, _confirm_title_value, notify=chromeChanged)
     confirmBody = Property(str, _confirm_body_value, notify=chromeChanged)
+    guideOpen = Property(bool, _guide_open, notify=guideChanged)
+    guideIndex = Property(int, _guide_index, notify=guideChanged)
+    guideStep = Property(str, _guide_step_text, notify=guideChanged)
+    guideHeading = Property(str, _guide_heading, notify=guideChanged)
+    guideBody = Property(str, _guide_body, notify=guideChanged)
+    guideMeasure = Property(str, _guide_measure_text, notify=guideChanged)
+    guideError = Property(str, _guide_error_text, notify=guideChanged)
+    guidePhase = Property(str, _guide_phase_value, notify=guideChanged)
+    guideFocus = Property(str, _guide_focus, notify=guideChanged)
+    guideNextLabel = Property(str, _guide_next_label, notify=guideChanged)
+    guideShowBack = Property(bool, _guide_show_back, notify=guideChanged)
+    calState = Property(str, _cal_state, notify=chromeChanged)
+    calWord = Property(str, _cal_word, notify=chromeChanged)
+    calDetail = Property(str, _cal_detail, notify=chromeChanged)
