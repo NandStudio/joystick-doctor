@@ -161,6 +161,7 @@ class AppController(QObject):
             {"id": "remap", "label": tr("nav_remap")},
             {"id": "sistema", "label": tr("nav_sistema")},
             {"id": "ajustes", "label": tr("nav_ajustes")},
+            {"id": "perfiles", "label": tr("nav_perfiles")},
         ]
 
     def _device_rows(self) -> list[dict[str, object]]:
@@ -832,6 +833,45 @@ class AppController(QObject):
         self.frame.emit()
 
     @Slot()
+    def createProfile(self) -> None:
+        if self._pump is None:
+            self._set_notice(tr("need_pad"))
+            return
+        self._write_profile()
+        self._set_notice(tr("profile_created"))
+        self._emit_chrome()
+
+    @Slot()
+    @Slot()
+    def editProfile(self) -> None:
+        self.setPage("curvas")
+
+    def _profile_state(self) -> str:
+        if self._session == "loading":
+            return "loading"
+        if self._profile_error:
+            return "error"
+        if self._profile_name:
+            return "ready"
+        return "empty"
+
+    def _profile_card_name(self) -> str:
+        if self._pump is None:
+            return ""
+        return self._pump.identity.product_name
+
+    def _profile_card_detail(self) -> str:
+        with self._cal_lock:
+            inner = int(round(self._cal.left.inner * 100))
+            curve = self._cal.left.curve
+        return tr(
+            "profile_changes",
+            deadzone=inner,
+            curve=f"{curve:.1f}",
+            rules=len(self._rules),
+        )
+
+    @Slot()
     def openConfigFolder(self) -> None:
         from pathlib import Path
 
@@ -1340,3 +1380,6 @@ class AppController(QObject):
     detectedPad = Property(str, _detected_pad, notify=chromeChanged)
     languagePref = Property(str, _language_pref, notify=languageChanged)
     settingsState = Property(str, _settings_state, notify=languageChanged)
+    profileState = Property(str, _profile_state, notify=chromeChanged)
+    profileCardName = Property(str, _profile_card_name, notify=chromeChanged)
+    profileCardDetail = Property(str, _profile_card_detail, notify=chromeChanged)
