@@ -137,6 +137,20 @@ Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: nav.modelData.id === "curvas"
                     }
+                    SwapMark {
+                        width: 16
+                        height: 16
+                        mark: nav.chosen ? theme.ink : theme.stroke
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: nav.modelData.id === "remap"
+                    }
+                    GearMark {
+                        width: 16
+                        height: 16
+                        mark: nav.chosen ? theme.ink : theme.stroke
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: nav.modelData.id === "sistema"
+                    }
                     Text {
                         text: nav.text
                         color: theme.ink
