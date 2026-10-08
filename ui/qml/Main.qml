@@ -92,6 +92,22 @@ Window {
         visible: app.page === "curvas"
     }
 
+    Remap {
+        anchors.left: sideBar.right
+        anchors.right: parent.right
+        anchors.top: titleBar.bottom
+        anchors.bottom: statusBar.top
+        visible: app.page === "remap"
+    }
+
+    Sistema {
+        anchors.left: sideBar.right
+        anchors.right: parent.right
+        anchors.top: titleBar.bottom
+        anchors.bottom: statusBar.top
+        visible: app.page === "sistema"
+    }
+
     StatusBar {
         id: statusBar
         anchors.left: parent.left
@@ -108,6 +124,10 @@ Window {
         z: 5
     }
 
+    FirstRun {
+        z: 8
+    }
+
     ConfirmDialog {
         z: 10
     }
@@ -117,6 +137,10 @@ Window {
         onActivated: {
             if (app.confirmOpen)
                 app.confirmNo()
+            else if (app.firstRunOpen)
+                app.dismissFirstRun()
+            else if (app.remapEditorOpen)
+                app.cancelRule()
             else if (app.guideOpen)
                 app.exitGuide()
         }

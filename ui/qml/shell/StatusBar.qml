@@ -62,9 +62,9 @@ Rectangle {
             Layout.fillWidth: true
         }
 
-        InkButton {
-            text: app.virtualLabel
-            onClicked: app.toggleVirtual()
+        QuietButton {
+            text: app.langTick >= 0 ? app.label("resolve") : ""
+            onClicked: app.setPage("sistema")
             Layout.alignment: Qt.AlignVCenter
         }
     }

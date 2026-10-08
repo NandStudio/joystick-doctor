@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import threading
+import time
 from copy import deepcopy
 from datetime import datetime
 
@@ -16,13 +17,23 @@ from engine.guided import GuidedSession
 from engine.pipeline import Calibration, StickCal, apply_calibration, apply_stick
 from engine.prefs import load_language
 from engine.profiles import ProfileReadError, load_profile, profile_key, profile_path, save_profile
-from engine.remap import RemapConfig, RemapEngine, RemapRule
+from engine.remap import BUTTONS, RemapConfig, RemapEngine, RemapRule
 from engine.state import DeviceIdentity, NormalizedState
 from engine.vigem import ViGEmMissingError, download_installer, is_installed as vigem_installed
 from engine.vigem import launch_installer
 from engine.virtual import VirtualXbox
 from ui.assets import bundle_root
 from ui.i18n import set_language, tr
+
+
+def _button_label(key: str) -> str:
+    names = {
+        "dpad_up": "Up",
+        "dpad_down": "Down",
+        "dpad_left": "Left",
+        "dpad_right": "Right",
+    }
+    return names.get(key, key.upper())
 
 
 class _Bridge(QObject):
@@ -53,6 +64,7 @@ class AppController(QObject):
     fontFamiliesChanged = Signal()
     guideChanged = Signal()
     curveChanged = Signal()
+    remapChanged = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -84,6 +96,15 @@ class AppController(QObject):
         self._guide = GuidedSession()
         self._draft: Calibration | None = None
         self._curve_error = ""
+        self._remap_editor = False
+        self._remap_edit = -1
+        self._remap_sources: set[str] = set()
+        self._remap_dest = "a"
+        self._remap_hold: str | None = None
+        self._remap_error = -1
+        self._first_run_dismissed = False
+        self._virtual_started = 0.0
+        self._install_both = False
         self._rules: list[RemapRule] = []
         self._remap = RemapEngine()
         self._remap_lock = threading.Lock()
@@ -134,6 +155,8 @@ class AppController(QObject):
             {"id": "diagnostico", "label": tr("nav_diagnostico")},
             {"id": "calibracion", "label": tr("nav_calibracion")},
             {"id": "curvas", "label": tr("nav_curvas")},
+            {"id": "remap", "label": tr("nav_remap")},
+            {"id": "sistema", "label": tr("nav_sistema")},
         ]
 
     def _device_rows(self) -> list[dict[str, object]]:
@@ -146,6 +169,7 @@ class AppController(QObject):
     def _emit_chrome(self) -> None:
         self.chromeChanged.emit()
         self.curveChanged.emit()
+        self.remapChanged.emit()
 
     def _ask(self, title: str, body: str, on_yes) -> None:
         self._confirm_queue.append((title, body, on_yes))
@@ -170,7 +194,7 @@ class AppController(QObject):
     def _refresh_drivers(self) -> None:
         vigem = tr("word_active") if vigem_installed() else tr("word_absent")
         hide = tr("word_active") if hidhide.is_installed() else tr("word_absent")
-        if vigem == self._vigem_word and hide == self._hid_word:
+        if vigem == self._vigem_word and hide == self._hid_word and not self._virtual_on:
             return
         self._vigem_word = vigem
         self._hid_word = hide
@@ -304,10 +328,14 @@ class AppController(QObject):
         try:
             launch_installer(path)
         except RuntimeError as exc:
+            self._install_both = False
             self._set_notice(str(exc))
             return
         self._set_notice(tr("finish_vigem"))
         self._refresh_drivers()
+        if self._install_both:
+            self._install_both = False
+            self._start_download("HidHide", hidhide.download_installer, self._run_hidhide)
 
     def _offer_hidhide(self) -> None:
         self._ask("HidHide", tr("hidhide_body"), lambda: self._start_download(
@@ -381,6 +409,7 @@ class AppController(QObject):
             self._virtual.stop()
             self._unhide_physical()
             self._virtual_on = False
+            self._virtual_started = 0.0
             self._ignore_xinput.clear()
             self._emit_chrome()
         if self._pump.error() or not self._pump.connected():
@@ -470,6 +499,7 @@ class AppController(QObject):
             self._unhide_physical()
             self._ignore_xinput.clear()
             self._virtual_on = False
+            self._virtual_started = 0.0
             self._set_notice(tr("virtual_stopped"))
             self._refresh_drivers()
             return
@@ -490,6 +520,7 @@ class AppController(QObject):
         self._ignore_xinput = after - before
         note = self._hide_physical(self._pump.identity)
         self._virtual_on = True
+        self._virtual_started = time.perf_counter()
         self._set_notice(tr("virtual_running", note=note))
         self._refresh_drivers()
 
@@ -605,6 +636,243 @@ class AppController(QObject):
         self._unhide_physical()
         self._stop_pump()
         self._monitor.stop()
+
+    def _rule_mode(self, rule: RemapRule) -> str:
+        if rule.toggle_hold:
+            return tr("mode_hold", label=_button_label(rule.toggle_hold))
+        if len(rule.sources) == 1 and rule.sources[0] == rule.dest:
+            return tr("mode_direct")
+        return tr("mode_swapped")
+
+    def _sync_rules(self) -> None:
+        with self._remap_lock:
+            self._remap = RemapEngine(RemapConfig(list(self._rules)))
+
+    def _save_rules(self) -> bool:
+        if self._pump is None:
+            self._set_notice(tr("need_pad"))
+            return False
+        try:
+            self._write_profile()
+        except OSError:
+            return False
+        self._remap_error = -1
+        return True
+
+    def _open_remap_editor(self, index: int) -> None:
+        if self._pump is None:
+            self._set_notice(tr("need_pad"))
+            return
+        self._remap_edit = index
+        if index >= 0 and index < len(self._rules):
+            rule = self._rules[index]
+            self._remap_sources = set(rule.sources)
+            self._remap_dest = rule.dest
+            self._remap_hold = rule.toggle_hold
+        else:
+            self._remap_sources = set()
+            self._remap_dest = "a"
+            self._remap_hold = None
+        self._remap_editor = True
+        self.remapChanged.emit()
+
+    @Slot()
+    def beginAddRule(self) -> None:
+        self._open_remap_editor(-1)
+
+    @Slot(int)
+    def beginEditRule(self, index: int) -> None:
+        self._open_remap_editor(index)
+
+    @Slot()
+    def cancelRule(self) -> None:
+        self._remap_editor = False
+        self.remapChanged.emit()
+
+    @Slot(str)
+    def toggleRemapSource(self, key: str) -> None:
+        if key not in BUTTONS:
+            return
+        if key in self._remap_sources:
+            self._remap_sources.remove(key)
+        else:
+            self._remap_sources.add(key)
+        self.remapChanged.emit()
+
+    @Slot(int)
+    def setRemapDest(self, index: int) -> None:
+        if 0 <= index < len(BUTTONS):
+            self._remap_dest = BUTTONS[index]
+            self.remapChanged.emit()
+
+    @Slot(int)
+    def setRemapHold(self, index: int) -> None:
+        if index <= 0 or index > len(BUTTONS):
+            self._remap_hold = None
+        else:
+            self._remap_hold = BUTTONS[index - 1]
+        self.remapChanged.emit()
+
+    @Slot()
+    def commitRule(self) -> None:
+        if not self._remap_sources or self._remap_dest not in BUTTONS:
+            self._set_notice(tr("select_remap"))
+            return
+        sources = tuple(key for key in BUTTONS if key in self._remap_sources)
+        rule = RemapRule(sources, self._remap_dest, self._remap_hold)
+        if 0 <= self._remap_edit < len(self._rules):
+            self._rules[self._remap_edit] = rule
+            saved_index = self._remap_edit
+        else:
+            self._rules.append(rule)
+            saved_index = len(self._rules) - 1
+        self._sync_rules()
+        if not self._save_rules():
+            self._remap_error = saved_index
+        self._remap_editor = False
+        self.remapChanged.emit()
+
+    @Slot()
+    def resetRules(self) -> None:
+        if self._pump is None:
+            self._set_notice(tr("need_pad"))
+            return
+        self._rules = []
+        self._sync_rules()
+        if not self._save_rules():
+            self._remap_error = 0
+        self.remapChanged.emit()
+
+    def _remap_rows(self) -> list:
+        rows = []
+        for index, rule in enumerate(self._rules):
+            rows.append(
+                {
+                    "index": index,
+                    "physical": " + ".join(_button_label(src) for src in rule.sources),
+                    "virtual": _button_label(rule.dest),
+                    "mode": tr("word_error") if index == self._remap_error else self._rule_mode(rule),
+                }
+            )
+        return rows
+
+    def _remap_sources_model(self) -> list:
+        return [
+            {"key": key, "label": _button_label(key), "on": key in self._remap_sources}
+            for key in BUTTONS
+        ]
+
+    def _remap_state(self) -> str:
+        if self._session == "loading":
+            return "loading"
+        if self._remap_error >= 0:
+            return "error"
+        if not self._rules:
+            return "empty"
+        return "ready"
+
+    def _remap_detail(self) -> str:
+        state = self._remap_state()
+        if state == "loading":
+            return tr("remap_loading")
+        if state == "empty":
+            return tr("remap_empty")
+        if state == "error":
+            return tr("remap_save_error")
+        return ""
+
+    def _hold_index(self) -> int:
+        if self._remap_hold is None:
+            return 0
+        try:
+            return BUTTONS.index(self._remap_hold) + 1
+        except ValueError:
+            return 0
+
+    def _dest_index(self) -> int:
+        try:
+            return BUTTONS.index(self._remap_dest)
+        except ValueError:
+            return 0
+
+    def _button_names(self) -> list:
+        return [_button_label(key) for key in BUTTONS]
+
+    def _hold_names(self) -> list:
+        return [tr("hold_none")] + [tr("hold_item", label=_button_label(key)) for key in BUTTONS]
+
+    @Slot()
+    def dismissFirstRun(self) -> None:
+        self._first_run_dismissed = True
+        self._emit_chrome()
+
+    @Slot()
+    def installBoth(self) -> None:
+        self._install_both = True
+        self._set_notice(tr("preparing_install", name="ViGEmBus"))
+        self._start_download("ViGEmBus", download_installer, self._run_vigem)
+
+    @Slot()
+    def installVigem(self) -> None:
+        self._install_both = False
+        self._offer_vigem()
+
+    @Slot()
+    def installHidHide(self) -> None:
+        self._offer_hidhide()
+
+    @Slot()
+    def installPs3(self) -> None:
+        self._ps3_offer_asked = False
+        self._maybe_offer_ps3()
+
+    @Slot()
+    def addWhitelist(self) -> None:
+        if not hidhide.is_installed():
+            self._offer_hidhide()
+            return
+        try:
+            hidhide.register_app(sys.executable)
+        except hidhide.HidHideError as exc:
+            self._set_notice(tr("hide_fail", error=exc))
+            return
+        self._set_notice(tr("whitelist_ok"))
+
+    @Slot()
+    def reconnectDevices(self) -> None:
+        self._monitor.poll()
+        self._set_notice(tr("reconnected"))
+
+    def _first_run_open(self) -> bool:
+        return (
+            not self._first_run_dismissed
+            and not vigem_installed()
+            and not hidhide.is_installed()
+        )
+
+    def _ps3_visible(self) -> bool:
+        return any(ps3drv.needs_helper(dev) for dev in self._devices.values())
+
+    def _ps3_word(self) -> str:
+        if ps3drv.helper_installed():
+            return tr("word_active")
+        return tr("word_absent")
+
+    def _ps3_name(self) -> str:
+        return ps3drv.package_name()
+
+    def _uptime_text(self) -> str:
+        if not self._virtual_on or self._virtual_started <= 0:
+            return ""
+        seconds = int(time.perf_counter() - self._virtual_started)
+        return tr("uptime", n=seconds)
+
+    def _detected_pad(self) -> str:
+        if self._pump is not None:
+            return self._pump.identity.product_name
+        if self._devices:
+            return next(iter(self._devices.values())).product_name
+        return tr("no_pad_detected")
 
     def _draft_cal(self) -> Calibration:
         if self._draft is None:
@@ -1009,3 +1277,18 @@ class AppController(QObject):
     triggerOuterPercent = Property(float, _trigger_outer_percent, notify=curveChanged)
     curveState = Property(str, _curve_state, notify=curveChanged)
     curveDetail = Property(str, _curve_detail, notify=curveChanged)
+    remapRows = Property("QVariantList", _remap_rows, notify=remapChanged)
+    remapSources = Property("QVariantList", _remap_sources_model, notify=remapChanged)
+    remapEditorOpen = Property(bool, lambda self: self._remap_editor, notify=remapChanged)
+    remapState = Property(str, _remap_state, notify=remapChanged)
+    remapDetail = Property(str, _remap_detail, notify=remapChanged)
+    buttonNames = Property("QVariantList", _button_names, notify=languageChanged)
+    holdNames = Property("QVariantList", _hold_names, notify=languageChanged)
+    remapDestIndex = Property(int, _dest_index, notify=remapChanged)
+    remapHoldIndex = Property(int, _hold_index, notify=remapChanged)
+    firstRunOpen = Property(bool, _first_run_open, notify=chromeChanged)
+    ps3Visible = Property(bool, _ps3_visible, notify=chromeChanged)
+    ps3Word = Property(str, _ps3_word, notify=chromeChanged)
+    ps3Name = Property(str, _ps3_name, notify=chromeChanged)
+    uptimeText = Property(str, _uptime_text, notify=chromeChanged)
+    detectedPad = Property(str, _detected_pad, notify=chromeChanged)
