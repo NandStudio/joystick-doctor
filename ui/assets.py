@@ -4,9 +4,11 @@ import sys
 from pathlib import Path
 
 
-def asset_path(name: str) -> Path:
+def bundle_root() -> Path:
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        root = Path(sys._MEIPASS)
-    else:
-        root = Path(__file__).resolve().parents[1]
-    return root / "assets" / name
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parents[1]
+
+
+def asset_path(name: str) -> Path:
+    return bundle_root() / "assets" / name

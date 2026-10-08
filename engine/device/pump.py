@@ -17,6 +17,9 @@ class DevicePump:
         self._state: NormalizedState | None = None
         self._error: BaseException | None = None
         self._connected = True
+        self._packets = 0
+        self._gap: float | None = None
+        self._last_read: float | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -45,6 +48,10 @@ class DevicePump:
         with self._lock:
             return self._connected
 
+    def traffic(self) -> tuple[int, float | None]:
+        with self._lock:
+            return self._packets, self._gap
+
     def _run(self) -> None:
         try:
             reader = reader_for(self.identity)
@@ -64,7 +71,12 @@ class DevicePump:
                         return
                     time.sleep(0.004)
                     continue
+                now = time.perf_counter()
                 with self._lock:
+                    if self._last_read is not None:
+                        self._gap = now - self._last_read
+                    self._last_read = now
+                    self._packets += 1
                     self._state = state
         except BaseException as exc:
             with self._lock:

@@ -14,7 +14,11 @@ for package in ("PySide6", "shiboken6", "hid", "vgamepad"):
     binaries += extra_binaries
     hiddenimports += extra_hidden
 
-datas += [(str(ROOT / "assets"), "assets")]
+datas += [
+    (str(ROOT / "assets"), "assets"),
+    (str(ROOT / "ui" / "qml"), "ui/qml"),
+    (str(ROOT / "ui" / "fonts"), "ui/fonts"),
+]
 
 hiddenimports += [
     "engine.device.ds3",

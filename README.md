@@ -29,10 +29,8 @@ Un DualShock 3 oficial (`054C:0268`) en Windows 10/11 suele necesitar [DsHidMini
 
 ## Uso
 
-1. Conectar el mando y elegirlo en la lista (izquierda).
-2. **Live** — sticks, gatillos y botones ya filtrados.
-3. **Diagnosis** — reposo → círculos de sticks → gatillos; aplica recomendaciones de deadzone/centro.
-4. **Settings** — deadzone, curva, invertir Y, recentrar, remap/combos (hold opcional).
-5. **Activar mando virtual** — Xbox 360 via ViGEm; HidHide oculta el físico si está instalado.
+1. Conectar el mando. Si hay más de uno, elegirlo en la barra lateral.
+2. **Diagnóstico** muestra la entrada física o la salida del Xbox 360 virtual.
+3. **Activar mando virtual**, en la barra de estado. HidHide oculta el físico si está instalado.
 
 Los perfiles se guardan en `%LOCALAPPDATA%\joystick-doctor\profiles\`.
