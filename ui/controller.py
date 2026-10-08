@@ -66,6 +66,7 @@ class AppController(QObject):
     guideChanged = Signal()
     curveChanged = Signal()
     remapChanged = Signal()
+    logChanged = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -108,6 +109,7 @@ class AppController(QObject):
         self._first_run_dismissed = False
         self._virtual_started = 0.0
         self._install_both = False
+        self._log: list[dict[str, str]] = []
         self._rules: list[RemapRule] = []
         self._remap = RemapEngine()
         self._remap_lock = threading.Lock()
@@ -162,6 +164,7 @@ class AppController(QObject):
             {"id": "sistema", "label": tr("nav_sistema")},
             {"id": "ajustes", "label": tr("nav_ajustes")},
             {"id": "perfiles", "label": tr("nav_perfiles")},
+            {"id": "registro", "label": tr("nav_registro")},
         ]
 
     def _device_rows(self) -> list[dict[str, object]]:
@@ -204,6 +207,18 @@ class AppController(QObject):
         self._vigem_word = vigem
         self._hid_word = hide
         self._emit_chrome()
+
+    def _log_event(self, level: str, text: str) -> None:
+        self._log.append(
+            {
+                "time": datetime.now().strftime("%H:%M:%S"),
+                "level": level,
+                "text": text,
+            }
+        )
+        if len(self._log) > 500:
+            del self._log[:-500]
+        self.logChanged.emit()
 
     def _set_notice(self, text: str) -> None:
         self._notice = text
@@ -265,6 +280,7 @@ class AppController(QObject):
         self._pump = DevicePump(device)
         self._pump.start()
         self._load_profile(device)
+        self._log_event("INFO", tr("log_open", name=device.product_name))
         self._emit_chrome()
         self.frame.emit()
         if ps3drv.needs_helper(device):
@@ -290,6 +306,7 @@ class AppController(QObject):
             self._stop_pump()
             self._session = "error"
             self._session_detail = tr("lost_device")
+            self._log_event("WARN", tr("log_lost"))
             self.frame.emit()
         if self._pump is None and not self._devices:
             self._session = "empty"
@@ -411,6 +428,7 @@ class AppController(QObject):
             return
         if self._virtual.error():
             self._notice = tr("virtual_err", error=self._virtual.error())
+            self._log_event("WARN", tr("log_error", text=str(self._virtual.error())))
             self._virtual.stop()
             self._unhide_physical()
             self._virtual_on = False
@@ -505,6 +523,7 @@ class AppController(QObject):
             self._ignore_xinput.clear()
             self._virtual_on = False
             self._virtual_started = 0.0
+            self._log_event("INFO", tr("log_virtual_off"))
             self._set_notice(tr("virtual_stopped"))
             self._refresh_drivers()
             return
@@ -526,6 +545,7 @@ class AppController(QObject):
         note = self._hide_physical(self._pump.identity)
         self._virtual_on = True
         self._virtual_started = time.perf_counter()
+        self._log_event("OK", tr("log_virtual_on"))
         self._set_notice(tr("virtual_running", note=note))
         self._refresh_drivers()
 
@@ -554,6 +574,7 @@ class AppController(QObject):
         )
         self._profile_name = path.name
         self._profile_error = False
+        self._log_event("OK", tr("log_profile", name=path.name))
 
     @Slot()
     def startGuide(self) -> None:
@@ -870,6 +891,39 @@ class AppController(QObject):
             curve=f"{curve:.1f}",
             rules=len(self._rules),
         )
+
+    @Slot()
+    def copyLog(self) -> None:
+        from PySide6.QtGui import QGuiApplication
+
+        if not self._log:
+            return
+        lines = [f"{item['time']}  {item['level']}  {item['text']}" for item in self._log]
+        clipboard = QGuiApplication.clipboard()
+        if clipboard is None:
+            self._set_notice(tr("log_copy_fail"))
+            return
+        clipboard.setText("\n".join(lines))
+        self._set_notice(tr("log_copied"))
+
+    @Slot()
+    def clearLog(self) -> None:
+        self._log.clear()
+        self.logChanged.emit()
+
+    def _log_rows(self) -> list:
+        return list(self._log)
+
+    def _log_last(self) -> str:
+        if not self._log:
+            return ""
+        item = self._log[-1]
+        return f"{item['level']}  {item['text']}"
+
+    def _log_state(self) -> str:
+        if not self._log:
+            return "empty"
+        return "ready"
 
     @Slot()
     def openConfigFolder(self) -> None:
@@ -1383,3 +1437,6 @@ class AppController(QObject):
     profileState = Property(str, _profile_state, notify=chromeChanged)
     profileCardName = Property(str, _profile_card_name, notify=chromeChanged)
     profileCardDetail = Property(str, _profile_card_detail, notify=chromeChanged)
+    logRows = Property("QVariantList", _log_rows, notify=logChanged)
+    logLast = Property(str, _log_last, notify=logChanged)
+    logState = Property(str, _log_state, notify=logChanged)
