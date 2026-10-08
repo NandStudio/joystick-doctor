@@ -165,6 +165,13 @@ Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: nav.modelData.id === "perfiles"
                     }
+                    LogMark {
+                        width: 16
+                        height: 16
+                        mark: nav.chosen ? theme.ink : theme.stroke
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: nav.modelData.id === "registro"
+                    }
                     Text {
                         text: nav.text
                         color: theme.ink

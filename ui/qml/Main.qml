@@ -124,6 +124,14 @@ Window {
         visible: app.page === "perfiles"
     }
 
+    Registro {
+        anchors.left: sideBar.right
+        anchors.right: parent.right
+        anchors.top: titleBar.bottom
+        anchors.bottom: statusBar.top
+        visible: app.page === "registro"
+    }
+
     StatusBar {
         id: statusBar
         anchors.left: parent.left
