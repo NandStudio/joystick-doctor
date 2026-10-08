@@ -116,6 +116,14 @@ Window {
         visible: app.page === "ajustes"
     }
 
+    Perfiles {
+        anchors.left: sideBar.right
+        anchors.right: parent.right
+        anchors.top: titleBar.bottom
+        anchors.bottom: statusBar.top
+        visible: app.page === "perfiles"
+    }
+
     StatusBar {
         id: statusBar
         anchors.left: parent.left
