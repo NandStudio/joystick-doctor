@@ -68,7 +68,7 @@ Window {
         width: 218
     }
 
-    Diagnostico {
+    Diagnosis {
         anchors.left: sideBar.right
         anchors.right: parent.right
         anchors.top: titleBar.bottom
@@ -76,7 +76,7 @@ Window {
         visible: app.page === "diagnostico"
     }
 
-    Calibracion {
+    Calibration {
         anchors.left: sideBar.right
         anchors.right: parent.right
         anchors.top: titleBar.bottom
@@ -84,7 +84,7 @@ Window {
         visible: app.page === "calibracion"
     }
 
-    Curvas {
+    Curves {
         anchors.left: sideBar.right
         anchors.right: parent.right
         anchors.top: titleBar.bottom
@@ -100,7 +100,7 @@ Window {
         visible: app.page === "remap"
     }
 
-    Sistema {
+    System {
         anchors.left: sideBar.right
         anchors.right: parent.right
         anchors.top: titleBar.bottom
@@ -108,7 +108,7 @@ Window {
         visible: app.page === "sistema"
     }
 
-    Ajustes {
+    Settings {
         anchors.left: sideBar.right
         anchors.right: parent.right
         anchors.top: titleBar.bottom
@@ -116,7 +116,7 @@ Window {
         visible: app.page === "ajustes"
     }
 
-    Perfiles {
+    Profiles {
         anchors.left: sideBar.right
         anchors.right: parent.right
         anchors.top: titleBar.bottom
@@ -124,7 +124,7 @@ Window {
         visible: app.page === "perfiles"
     }
 
-    Registro {
+    Log {
         anchors.left: sideBar.right
         anchors.right: parent.right
         anchors.top: titleBar.bottom
@@ -132,7 +132,7 @@ Window {
         visible: app.page === "registro"
     }
 
-    Vibracion {
+    Vibration {
         anchors.left: sideBar.right
         anchors.right: parent.right
         anchors.top: titleBar.bottom
