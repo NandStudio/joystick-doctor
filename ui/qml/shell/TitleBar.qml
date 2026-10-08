@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Window
+import "../controls"
 import "../glyphs"
 
 Rectangle {
@@ -30,10 +31,19 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
         }
         Text {
-            text: "Joystick Doctor"
+            text: app.guideOpen ? (app.langTick >= 0 ? app.label("guide_title") : "") : "Joystick Doctor"
             color: theme.ink
             font.family: app.displayFamily
             font.pixelSize: 15
+            anchors.verticalCenter: parent.verticalCenter
+        }
+        Text {
+            visible: app.guideOpen
+            text: app.guideStep
+            color: theme.ink
+            font.family: app.bodyFamily
+            font.pixelSize: 13
+            font.weight: 600
             anchors.verticalCenter: parent.verticalCenter
         }
     }
@@ -42,6 +52,18 @@ Rectangle {
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
         spacing: 0
+
+        Item {
+            width: app.guideOpen ? exitGuide.implicitWidth + 8 : 0
+            height: 44
+            visible: app.guideOpen
+            QuietButton {
+                id: exitGuide
+                anchors.verticalCenter: parent.verticalCenter
+                text: app.langTick >= 0 ? app.label("guide_exit") : ""
+                onClicked: app.exitGuide()
+            }
+        }
 
         component WinButton: Button {
             id: win

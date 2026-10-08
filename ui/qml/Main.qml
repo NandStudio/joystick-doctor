@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Window
+import QtQuick.Controls
 import "shell"
 import "screens"
 
@@ -75,6 +76,14 @@ Window {
         visible: app.page === "diagnostico"
     }
 
+    Calibracion {
+        anchors.left: sideBar.right
+        anchors.right: parent.right
+        anchors.top: titleBar.bottom
+        anchors.bottom: statusBar.top
+        visible: app.page === "calibracion"
+    }
+
     StatusBar {
         id: statusBar
         anchors.left: parent.left
@@ -83,8 +92,26 @@ Window {
         height: 44
     }
 
+    GuideOverlay {
+        anchors.top: titleBar.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        z: 5
+    }
+
     ConfirmDialog {
         z: 10
+    }
+
+    Shortcut {
+        sequence: "Escape"
+        onActivated: {
+            if (app.confirmOpen)
+                app.confirmNo()
+            else if (app.guideOpen)
+                app.exitGuide()
+        }
     }
 
     onClosing: function(close) {

@@ -26,6 +26,12 @@ Item {
             Segment {}
         }
 
+        InkButton {
+            text: app.langTick >= 0 ? app.label("calibrate_pad") : ""
+            onClicked: app.startGuide()
+            Layout.alignment: Qt.AlignLeft
+        }
+
         Text {
             text: app.langTick >= 0 ? app.label("diag_sub") : ""
             color: theme.muted

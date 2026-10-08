@@ -119,9 +119,16 @@ Rectangle {
                     PulseMark {
                         width: 16
                         height: 16
-                        mark: theme.ink
+                        mark: nav.chosen ? theme.ink : theme.stroke
                         anchors.verticalCenter: parent.verticalCenter
                         visible: nav.modelData.id === "diagnostico"
+                    }
+                    MiraMark {
+                        width: 16
+                        height: 16
+                        mark: nav.chosen ? theme.ink : theme.stroke
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: nav.modelData.id === "calibracion"
                     }
                     Text {
                         text: nav.text
