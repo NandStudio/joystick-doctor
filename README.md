@@ -35,7 +35,7 @@ Un DualShock 3 oficial (`054C:0268`) en Windows 10/11 suele necesitar [DsHidMini
 4. **Deadzone y curvas** aplica la gamma al virtual.
 5. **Remap** decide qué botón físico ve el juego.
 6. **Sistema** revisa ViGEmBus e HidHide y activa el Xbox 360 virtual. HidHide oculta el físico si está instalado.
-7. **Ajustes** cambia el idioma y abre la carpeta de configuración.
+7. **Ajustes** cambia el idioma, el tema claro u oscuro, y abre la carpeta de configuración.
 8. **Perfiles** guarda ese conjunto para el mando abierto.
 9. **Registro** lista los eventos del puente.
 10. **Vibración** dice si este mando no tiene salida de rumble.

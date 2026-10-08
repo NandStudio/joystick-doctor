@@ -98,10 +98,12 @@ Item {
                             y: languageBox.topPadding + (languageBox.availableHeight - height) / 2
                             width: 10
                             height: 6
+                            property color mark: theme.stroke
+                            onMarkChanged: requestPaint()
                             onPaint: {
                                 var ctx = getContext("2d")
                                 ctx.reset()
-                                ctx.strokeStyle = theme.stroke
+                                ctx.strokeStyle = mark
                                 ctx.lineWidth = 1.75
                                 ctx.lineCap = "round"
                                 ctx.lineJoin = "round"
@@ -168,6 +170,29 @@ Item {
                                 radius: theme.radiusControl
                                 color: parent.highlighted ? theme.wash : "transparent"
                             }
+                        }
+                    }
+                    Text {
+                        text: app.langTick >= 0 ? app.label("theme_label") : ""
+                        color: theme.muted
+                        font.family: app.bodyFamily
+                        font.pixelSize: 12
+                        Layout.topMargin: 8
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        QuietButton {
+                            text: app.langTick >= 0 ? app.label("theme_light") : ""
+                            chosen: !theme.isDark
+                            onClicked: app.setTheme("light")
+                            Layout.fillWidth: true
+                        }
+                        QuietButton {
+                            text: app.langTick >= 0 ? app.label("theme_dark") : ""
+                            chosen: theme.isDark
+                            onClicked: app.setTheme("dark")
+                            Layout.fillWidth: true
                         }
                     }
                 }

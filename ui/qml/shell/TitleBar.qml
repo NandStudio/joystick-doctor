@@ -77,7 +77,7 @@ Rectangle {
                         return "transparent"
                     if (win.closes)
                         return theme.ink
-                    return Qt.rgba(0.118, 0.118, 0.118, 0.07)
+                    return theme.hoverWash
                 }
             }
             Rectangle {

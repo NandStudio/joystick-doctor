@@ -47,7 +47,7 @@ Rectangle {
                         anchors.fill: parent
                         radius: theme.radiusControl
                         color: deviceButton.hovered || deviceButton.down
-                               ? Qt.rgba(0.118, 0.118, 0.118, 0.07) : "transparent"
+                               ? theme.hoverWash : "transparent"
                     }
                     Rectangle {
                         anchors.fill: parent
