@@ -172,6 +172,13 @@ Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: nav.modelData.id === "registro"
                     }
+                    MotorMark {
+                        width: 16
+                        height: 16
+                        mark: nav.chosen ? theme.ink : theme.stroke
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: nav.modelData.id === "vibracion"
+                    }
                     Text {
                         text: nav.text
                         color: theme.ink

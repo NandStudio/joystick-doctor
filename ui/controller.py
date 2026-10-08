@@ -165,6 +165,7 @@ class AppController(QObject):
             {"id": "ajustes", "label": tr("nav_ajustes")},
             {"id": "perfiles", "label": tr("nav_perfiles")},
             {"id": "registro", "label": tr("nav_registro")},
+            {"id": "vibracion", "label": tr("nav_vibracion")},
         ]
 
     def _device_rows(self) -> list[dict[str, object]]:
