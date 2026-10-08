@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import threading
+from copy import deepcopy
 from datetime import datetime
 
 from PySide6.QtCore import Property, QObject, QThread, QTimer, QUrl, Signal, Slot
@@ -12,7 +13,7 @@ from engine.device.hotplug import HotplugMonitor
 from engine.device.pump import DevicePump
 from engine.device.xinput import enumerate_devices as enumerate_xinput
 from engine.guided import GuidedSession
-from engine.pipeline import Calibration, apply_calibration
+from engine.pipeline import Calibration, StickCal, apply_calibration, apply_stick
 from engine.prefs import load_language
 from engine.profiles import ProfileReadError, load_profile, profile_key, profile_path, save_profile
 from engine.remap import RemapConfig, RemapEngine, RemapRule
@@ -51,6 +52,7 @@ class AppController(QObject):
     languageChanged = Signal()
     fontFamiliesChanged = Signal()
     guideChanged = Signal()
+    curveChanged = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -80,6 +82,8 @@ class AppController(QObject):
         self._measured = {"at": "", "summary": ""}
         self._profile_error = False
         self._guide = GuidedSession()
+        self._draft: Calibration | None = None
+        self._curve_error = ""
         self._rules: list[RemapRule] = []
         self._remap = RemapEngine()
         self._remap_lock = threading.Lock()
@@ -129,6 +133,7 @@ class AppController(QObject):
         return [
             {"id": "diagnostico", "label": tr("nav_diagnostico")},
             {"id": "calibracion", "label": tr("nav_calibracion")},
+            {"id": "curvas", "label": tr("nav_curvas")},
         ]
 
     def _device_rows(self) -> list[dict[str, object]]:
@@ -140,6 +145,7 @@ class AppController(QObject):
 
     def _emit_chrome(self) -> None:
         self.chromeChanged.emit()
+        self.curveChanged.emit()
 
     def _ask(self, title: str, body: str, on_yes) -> None:
         self._confirm_queue.append((title, body, on_yes))
@@ -182,6 +188,8 @@ class AppController(QObject):
             return self._remap.apply(calibrated)
 
     def _load_profile(self, device: DeviceIdentity) -> None:
+        self._draft = None
+        self._curve_error = ""
         try:
             loaded = load_profile(device)
         except ProfileReadError:
@@ -551,8 +559,10 @@ class AppController(QObject):
             "summary": self._guide.summary(),
         }
         self._write_profile()
+        self._draft = None
         self._guide.stop()
         self._set_notice(tr("guide_saved"))
+        self.curveChanged.emit()
         self.guideChanged.emit()
         self.frame.emit()
 
@@ -564,8 +574,10 @@ class AppController(QObject):
         with self._cal_lock:
             self._cal = Calibration.default()
         self._measured = {"at": "", "summary": ""}
+        self._draft = None
         self._write_profile(clear_measured=True)
         self._set_notice(tr("factory_done"))
+        self.curveChanged.emit()
         self.guideChanged.emit()
         self.frame.emit()
 
@@ -593,6 +605,160 @@ class AppController(QObject):
         self._unhide_physical()
         self._stop_pump()
         self._monitor.stop()
+
+    def _draft_cal(self) -> Calibration:
+        if self._draft is None:
+            with self._cal_lock:
+                self._draft = deepcopy(self._cal)
+        return self._draft
+
+    def _sync_stick_pair(self, inner: float | None = None, outer: float | None = None, curve: float | None = None) -> None:
+        draft = self._draft_cal()
+        for stick in (draft.left, draft.right):
+            if inner is not None:
+                stick.inner = inner
+            if outer is not None:
+                stick.outer = max(stick.inner + 0.01, min(outer, 1.0))
+            if curve is not None:
+                stick.curve = curve
+        self._curve_error = ""
+        self.curveChanged.emit()
+
+    @Slot(float)
+    def setInner(self, percent: float) -> None:
+        inner = max(0.0, min(percent / 100.0, 0.95))
+        draft = self._draft_cal()
+        outer = max(draft.left.outer, inner + 0.01)
+        self._sync_stick_pair(inner=inner, outer=outer)
+
+    @Slot(float)
+    def setOuter(self, percent: float) -> None:
+        draft = self._draft_cal()
+        outer = max(draft.left.inner + 0.01, min(percent / 100.0, 1.0))
+        self._sync_stick_pair(outer=outer)
+
+    @Slot(float)
+    def setTriggerInner(self, percent: float) -> None:
+        draft = self._draft_cal()
+        inner = max(0.0, min(percent / 100.0, 0.95))
+        for trigger in (draft.lt, draft.rt):
+            trigger.inner = inner
+            trigger.outer = max(trigger.outer, inner + 0.01)
+        self._curve_error = ""
+        self.curveChanged.emit()
+
+    @Slot(float)
+    def setTriggerOuter(self, percent: float) -> None:
+        draft = self._draft_cal()
+        for trigger in (draft.lt, draft.rt):
+            trigger.outer = max(trigger.inner + 0.01, min(percent / 100.0, 1.0))
+        self._curve_error = ""
+        self.curveChanged.emit()
+
+    @Slot(str)
+    def setCurvePreset(self, preset: str) -> None:
+        curve = {"linear": 1.0, "aggressive": 0.55, "smooth": 1.8}.get(preset)
+        if curve is None:
+            return
+        self._sync_stick_pair(curve=curve)
+
+    @Slot()
+    def applyCurve(self) -> None:
+        if self._pump is None:
+            self._curve_error = "missing"
+            self._set_notice(tr("need_device_curve"))
+            self.curveChanged.emit()
+            return
+        draft = deepcopy(self._draft_cal())
+        with self._cal_lock:
+            previous = deepcopy(self._cal)
+            self._cal = draft
+        try:
+            self._write_profile()
+        except OSError:
+            with self._cal_lock:
+                self._cal = previous
+            self._curve_error = "write"
+            self._set_notice(tr("curve_write_error"))
+            self.curveChanged.emit()
+            return
+        self._draft = deepcopy(draft)
+        self._curve_error = ""
+        self._set_notice(tr("curve_applied"))
+        self.curveChanged.emit()
+        self.frame.emit()
+
+    @Slot()
+    def discardCurve(self) -> None:
+        self._draft = None
+        self._curve_error = ""
+        self.curveChanged.emit()
+        self.frame.emit()
+
+    def _curve_preset(self) -> str:
+        curve = self._draft_cal().left.curve
+        if abs(curve - 1.0) < 0.05:
+            return "linear"
+        if abs(curve - 0.55) < 0.05:
+            return "aggressive"
+        if abs(curve - 1.8) < 0.05:
+            return "smooth"
+        return "custom"
+
+    def _curve_name(self) -> str:
+        preset = self._curve_preset()
+        if preset == "linear":
+            return tr("preset_linear")
+        if preset == "aggressive":
+            return tr("preset_aggressive")
+        if preset == "smooth":
+            return tr("preset_smooth")
+        return tr("curve_named", value=f"{self._draft_cal().left.curve:.1f}")
+
+    def _curve_points(self) -> list:
+        draft = self._draft_cal()
+        sample = StickCal(
+            inner=draft.left.inner,
+            outer=draft.left.outer,
+            curve=draft.left.curve,
+        )
+        points = []
+        for index in range(33):
+            incoming = index / 32
+            outgoing, _y = apply_stick(incoming, 0.0, sample)
+            points.append(round(outgoing, 4))
+        return points
+
+    def _inner_percent(self) -> float:
+        return self._draft_cal().left.inner * 100
+
+    def _outer_percent(self) -> float:
+        return self._draft_cal().left.outer * 100
+
+    def _trigger_inner_percent(self) -> float:
+        return self._draft_cal().lt.inner * 100
+
+    def _trigger_outer_percent(self) -> float:
+        return self._draft_cal().lt.outer * 100
+
+    def _curve_state(self) -> str:
+        if self._session == "loading":
+            return "loading"
+        if self._curve_error == "write":
+            return "error"
+        if self._pump is None:
+            return "empty"
+        return "ready"
+
+    def _curve_detail(self) -> str:
+        state = self._curve_state()
+        if state == "loading":
+            return tr("curve_loading")
+        if state == "error":
+            return tr("curve_write_error")
+        if state == "empty":
+            return tr("need_device_curve")
+        return ""
 
     def _guide_open(self) -> bool:
         return self._guide.active
@@ -834,3 +1000,12 @@ class AppController(QObject):
     calState = Property(str, _cal_state, notify=chromeChanged)
     calWord = Property(str, _cal_word, notify=chromeChanged)
     calDetail = Property(str, _cal_detail, notify=chromeChanged)
+    curvePreset = Property(str, _curve_preset, notify=curveChanged)
+    curveName = Property(str, _curve_name, notify=curveChanged)
+    curvePoints = Property("QVariantList", _curve_points, notify=curveChanged)
+    innerPercent = Property(float, _inner_percent, notify=curveChanged)
+    outerPercent = Property(float, _outer_percent, notify=curveChanged)
+    triggerInnerPercent = Property(float, _trigger_inner_percent, notify=curveChanged)
+    triggerOuterPercent = Property(float, _trigger_outer_percent, notify=curveChanged)
+    curveState = Property(str, _curve_state, notify=curveChanged)
+    curveDetail = Property(str, _curve_detail, notify=curveChanged)

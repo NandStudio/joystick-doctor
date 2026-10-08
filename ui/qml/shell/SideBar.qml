@@ -130,6 +130,13 @@ Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: nav.modelData.id === "calibracion"
                     }
+                    CurveMark {
+                        width: 16
+                        height: 16
+                        mark: nav.chosen ? theme.ink : theme.stroke
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: nav.modelData.id === "curvas"
+                    }
                     Text {
                         text: nav.text
                         color: theme.ink
