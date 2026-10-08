@@ -65,7 +65,11 @@ Item {
                         font.pixelSize: 12
                     }
                     ComboBox {
+                        id: languageBox
                         Layout.fillWidth: true
+                        implicitHeight: 36
+                        leftPadding: 14
+                        rightPadding: 28
                         font.family: app.bodyFamily
                         font.pixelSize: 14
                         model: [
@@ -77,6 +81,93 @@ Item {
                         onActivated: {
                             var prefs = ["system", "en", "es"]
                             app.setLanguagePref(prefs[currentIndex])
+                        }
+
+                        contentItem: Text {
+                            leftPadding: languageBox.leftPadding
+                            rightPadding: languageBox.indicator.width + languageBox.spacing
+                            text: languageBox.displayText
+                            font: languageBox.font
+                            color: theme.ink
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                        }
+
+                        indicator: Canvas {
+                            x: languageBox.width - width - 12
+                            y: languageBox.topPadding + (languageBox.availableHeight - height) / 2
+                            width: 10
+                            height: 6
+                            onPaint: {
+                                var ctx = getContext("2d")
+                                ctx.reset()
+                                ctx.strokeStyle = theme.stroke
+                                ctx.lineWidth = 1.75
+                                ctx.lineCap = "round"
+                                ctx.lineJoin = "round"
+                                ctx.beginPath()
+                                ctx.moveTo(1, 1)
+                                ctx.lineTo(5, 5)
+                                ctx.lineTo(9, 1)
+                                ctx.stroke()
+                            }
+                        }
+
+                        background: Item {
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: theme.radiusControl
+                                color: theme.canvas
+                                border.width: 1
+                                border.color: theme.stroke
+                            }
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.margins: -4
+                                radius: theme.radiusControl + 4
+                                color: "transparent"
+                                border.width: 2
+                                border.color: languageBox.activeFocus ? theme.ink : "transparent"
+                            }
+                        }
+
+                        popup: Popup {
+                            y: languageBox.height + 4
+                            width: languageBox.width
+                            padding: 4
+                            contentItem: ListView {
+                                clip: true
+                                implicitHeight: contentHeight
+                                model: languageBox.popup.visible ? languageBox.delegateModel : null
+                                currentIndex: languageBox.highlightedIndex
+                            }
+                            background: Rectangle {
+                                radius: theme.radiusControl
+                                color: theme.canvas
+                                border.width: 1
+                                border.color: theme.stroke
+                            }
+                        }
+
+                        delegate: ItemDelegate {
+                            required property var modelData
+                            required property int index
+                            width: languageBox.width - 8
+                            text: modelData
+                            font.family: app.bodyFamily
+                            font.pixelSize: 14
+                            highlighted: languageBox.highlightedIndex === index
+                            contentItem: Text {
+                                text: parent.text
+                                font: parent.font
+                                color: theme.ink
+                                verticalAlignment: Text.AlignVCenter
+                                leftPadding: 10
+                            }
+                            background: Rectangle {
+                                radius: theme.radiusControl
+                                color: parent.highlighted ? theme.wash : "transparent"
+                            }
                         }
                     }
                 }
