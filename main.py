@@ -4,11 +4,11 @@ import ctypes
 import sys
 
 from PySide6.QtCore import QUrl
-from PySide6.QtGui import QGuiApplication, QIcon
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
-from ui.assets import asset_path, bundle_root
+from ui.assets import bundle_root
 from ui.controller import AppController
 from ui.theme import Palette
 
@@ -16,9 +16,6 @@ from ui.theme import Palette
 def main() -> None:
     QQuickStyle.setStyle("Basic")
     app = QGuiApplication(sys.argv)
-    icon = QIcon(str(asset_path("icon.png")))
-    if not icon.isNull():
-        app.setWindowIcon(icon)
     engine = QQmlApplicationEngine()
     palette = Palette(engine)
     controller = AppController(engine, palette)
@@ -34,7 +31,9 @@ def main() -> None:
     engine.load(QUrl.fromLocalFile(str(qml)))
     if not engine.rootObjects():
         raise SystemExit(1)
-    _prefer_square_frame(engine.rootObjects()[0])
+    window = engine.rootObjects()[0]
+    controller.attach_window(window)
+    _prefer_square_frame(window)
     raise SystemExit(app.exec())
 
 

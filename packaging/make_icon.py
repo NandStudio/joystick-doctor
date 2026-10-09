@@ -1,4 +1,4 @@
-"""Build assets/icon.ico from assets/icon.png (nearest-neighbor, several sizes)."""
+"""Build assets/icon.ico from the light-theme logo for the installer and the exe."""
 
 from __future__ import annotations
 
@@ -6,11 +6,11 @@ import struct
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QBuffer, QByteArray, QIODevice, Qt
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice
 from PySide6.QtGui import QGuiApplication, QImage
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "assets" / "icon.png"
+SRC = ROOT / "assets" / "logo-theme-light.svg"
 DST = ROOT / "assets" / "icon.ico"
 SIZES = (16, 32, 48, 256)
 
@@ -22,17 +22,6 @@ def _png_bytes(image: QImage) -> bytes:
     if not image.save(buffer, "PNG"):
         raise RuntimeError("Could not encode PNG frame for the ICO.")
     return bytes(blob)
-
-
-def _scale(source: QImage, size: int) -> QImage:
-    if source.width() == size and source.height() == size:
-        return source.convertToFormat(QImage.Format.Format_ARGB32)
-    return source.scaled(
-        size,
-        size,
-        Qt.AspectRatioMode.IgnoreAspectRatio,
-        Qt.TransformationMode.FastTransformation,
-    ).convertToFormat(QImage.Format.Format_ARGB32)
 
 
 def write_ico(path: Path, frames: list[QImage]) -> None:
@@ -52,12 +41,12 @@ def write_ico(path: Path, frames: list[QImage]) -> None:
 
 def main() -> None:
     QGuiApplication.instance() or QGuiApplication(sys.argv)
+    sys.path.insert(0, str(ROOT))
+    from ui.assets import render_logo
+
     if not SRC.is_file():
         raise SystemExit(f"Missing {SRC}")
-    source = QImage(str(SRC))
-    if source.isNull():
-        raise SystemExit(f"Could not read {SRC}")
-    frames = [_scale(source, size) for size in SIZES]
+    frames = [render_logo(SRC, size) for size in SIZES]
     DST.parent.mkdir(parents=True, exist_ok=True)
     write_ico(DST, frames)
     print(f"Wrote {DST} ({', '.join(str(s) for s in SIZES)})")

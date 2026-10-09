@@ -23,7 +23,7 @@ from engine.state import DeviceIdentity, NormalizedState
 from engine.vigem import ViGEmMissingError, download_installer, is_installed as vigem_installed
 from engine.vigem import launch_installer
 from engine.virtual import VirtualXbox
-from ui.assets import bundle_root
+from ui.assets import asset_path, bundle_root, logo_icon
 from ui.i18n import set_language, tr
 from ui.theme import Palette
 
@@ -78,6 +78,8 @@ class AppController(QObject):
         self._lang_pref = load_language()
         self._settings_error = False
         self._palette = palette or Palette(self)
+        self._window = None
+        self._palette.changed.connect(self.apply_brand_icon)
         self._palette.set_mode(load_theme())
         self._debug = load_debug()
         set_language(self._lang_pref)
@@ -469,6 +471,26 @@ class AppController(QObject):
         self._poll_hz = (1.0 / gap) if gap and gap > 0 else -1.0
         self._has_sample = True
         self.frame.emit()
+
+    def apply_brand_icon(self) -> None:
+        from PySide6.QtGui import QGuiApplication
+
+        icon = logo_icon(self._palette.mode())
+        if icon.isNull():
+            return
+        app = QGuiApplication.instance()
+        if app is not None:
+            app.setWindowIcon(icon)
+        if self._window is not None:
+            self._window.setIcon(icon)
+
+    def attach_window(self, window) -> None:
+        self._window = window
+        self.apply_brand_icon()
+
+    @Slot(str, result=str)
+    def assetUrl(self, name: str) -> str:
+        return QUrl.fromLocalFile(str(asset_path(name))).toString()
 
     @Slot(str, result=str)
     def fontUrl(self, name: str) -> str:
