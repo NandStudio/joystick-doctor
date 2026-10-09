@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import sys
 
 from PySide6.QtCore import QUrl
@@ -33,7 +34,21 @@ def main() -> None:
     engine.load(QUrl.fromLocalFile(str(qml)))
     if not engine.rootObjects():
         raise SystemExit(1)
+    _prefer_square_frame(engine.rootObjects()[0])
     raise SystemExit(app.exec())
+
+
+def _prefer_square_frame(window) -> None:
+    # The shell draws the radius. DWM's own corner would square it back.
+    if sys.platform != "win32":
+        return
+    try:
+        preference = ctypes.c_int(1)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            int(window.winId()), 33, ctypes.byref(preference), 4
+        )
+    except (AttributeError, OSError):
+        return
 
 
 if __name__ == "__main__":
