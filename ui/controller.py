@@ -165,12 +165,12 @@ class AppController(QObject):
             {"id": "calibracion", "label": tr("nav_calibracion")},
             {"id": "curvas", "label": tr("nav_curvas")},
             {"id": "remap", "label": tr("nav_remap")},
+            {"id": "vibracion", "label": tr("nav_vibracion")},
             {"id": "sistema", "label": tr("nav_sistema")},
             {"id": "perfiles", "label": tr("nav_perfiles")},
         ]
         if self._debug:
             items.append({"id": "registro", "label": tr("nav_registro")})
-        items.append({"id": "vibracion", "label": tr("nav_vibracion")})
         items.append({"id": "ajustes", "label": tr("nav_ajustes")})
         return items
 
