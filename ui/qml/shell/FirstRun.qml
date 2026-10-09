@@ -14,6 +14,8 @@ Rectangle {
         height: column.implicitHeight + 52
         radius: theme.radiusCard
         color: theme.surface
+        border.width: theme.edge
+        border.color: theme.stroke
 
         Rectangle {
             z: -1

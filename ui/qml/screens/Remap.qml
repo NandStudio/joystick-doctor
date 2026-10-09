@@ -101,6 +101,8 @@ Item {
             height: Math.min(560, parent.height - 40)
             radius: theme.radiusCard
             color: theme.surface
+            border.width: theme.edge
+            border.color: theme.stroke
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 20

@@ -66,6 +66,8 @@ Item {
             visible: app.profileState === "ready"
             radius: theme.radiusCard
             color: theme.surface
+            border.width: theme.edge
+            border.color: theme.stroke
             Layout.fillWidth: true
             Layout.maximumWidth: 520
             implicitHeight: card.implicitHeight + 36

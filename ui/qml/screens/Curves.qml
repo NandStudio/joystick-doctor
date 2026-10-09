@@ -46,6 +46,8 @@ Item {
                 Layout.minimumHeight: 220
                 radius: theme.radiusCard
                 color: theme.surface
+                border.width: theme.edge
+                border.color: theme.stroke
                 Canvas {
                     id: plot
                     anchors.fill: parent

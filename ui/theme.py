@@ -41,7 +41,10 @@ class Palette(QObject):
         return self._pick("#ebebeb", "#1e1e1e", "#000000")
 
     def _surface(self) -> str:
-        return self._pick("#dedede", "#2b2b2b", "#3a3a3a")
+        return self._pick("#dedede", "#2b2b2b", "#000000")
+
+    def _edge(self) -> int:
+        return 2 if self._mode == "contrast" else 0
 
     def _ink(self) -> str:
         return self._pick("#1e1e1e", "#ebebeb", "#ffffff")
@@ -77,6 +80,7 @@ class Palette(QObject):
     isContrast = Property(bool, is_contrast, notify=changed)
     canvas = Property(str, _canvas, notify=changed)
     surface = Property(str, _surface, notify=changed)
+    edge = Property(int, _edge, notify=changed)
     ink = Property(str, _ink, notify=changed)
     muted = Property(str, _muted, notify=changed)
     stroke = Property(str, _stroke, notify=changed)
