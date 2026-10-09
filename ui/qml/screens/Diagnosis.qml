@@ -188,6 +188,7 @@ Item {
                 }
 
                 Rectangle {
+                    visible: app.debugEnabled
                     radius: theme.radiusCard
                     color: theme.surface
                     border.width: theme.edge

@@ -225,14 +225,14 @@ Item {
                         anchors.margins: 18
                         spacing: 12
                         Text {
-                            text: "DEBUG"
+                            text: app.langTick >= 0 ? app.label("debug_title") : ""
                             color: theme.ink
                             font.family: app.displayFamily
                             font.pixelSize: 17
                         }
                         QuietButton {
                             framed: true
-                            text: app.langTick >= 0 ? app.label("debug_log_chip") : ""
+                            text: app.langTick >= 0 ? app.label(app.debugEnabled ? "debug_on" : "debug_off") : ""
                             chosen: app.debugEnabled
                             onClicked: app.setDebug(!app.debugEnabled)
                             Layout.fillWidth: true

@@ -43,6 +43,7 @@ Rectangle {
             value: app.hidHideWord
         }
         StatusWord {
+            visible: app.debugEnabled
             caption: app.langTick >= 0 ? app.label("status_poll") : ""
             value: app.pollText
         }
