@@ -99,6 +99,8 @@ Item {
                 Rectangle {
                     radius: theme.radiusCard
                     color: theme.surface
+                    border.width: theme.edge
+                    border.color: theme.stroke
                     Layout.fillWidth: true
                     implicitHeight: stickCol.implicitHeight + 32
                     Column {
@@ -127,6 +129,8 @@ Item {
                 Rectangle {
                     radius: theme.radiusCard
                     color: theme.surface
+                    border.width: theme.edge
+                    border.color: theme.stroke
                     Layout.fillWidth: true
                     implicitHeight: triggerCol.implicitHeight + 32
                     Column {
@@ -186,6 +190,8 @@ Item {
                 Rectangle {
                     radius: theme.radiusCard
                     color: theme.surface
+                    border.width: theme.edge
+                    border.color: theme.stroke
                     Layout.fillWidth: true
                     implicitHeight: linkCol.implicitHeight + 32
                     Column {

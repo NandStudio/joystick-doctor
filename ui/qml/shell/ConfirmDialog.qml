@@ -25,6 +25,8 @@ Rectangle {
         height: dialogColumn.implicitHeight + 52
         radius: theme.radiusCard
         color: theme.surface
+        border.width: theme.edge
+        border.color: theme.stroke
 
         ColumnLayout {
             id: dialogColumn

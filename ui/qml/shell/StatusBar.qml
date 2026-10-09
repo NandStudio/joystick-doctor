@@ -1,9 +1,10 @@
 import QtQuick
 import QtQuick.Layouts
-import "../controls"
 
 Rectangle {
     color: theme.surface
+    border.width: theme.edge
+    border.color: theme.stroke
     implicitHeight: 44
 
     RowLayout {
@@ -60,12 +61,6 @@ Rectangle {
             font.pixelSize: 12
             elide: Text.ElideRight
             Layout.fillWidth: true
-        }
-
-        QuietButton {
-            text: app.langTick >= 0 ? app.label("resolve") : ""
-            onClicked: app.setPage("sistema")
-            Layout.alignment: Qt.AlignVCenter
         }
     }
 }

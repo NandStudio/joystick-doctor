@@ -6,6 +6,8 @@ import "../glyphs"
 
 Rectangle {
     color: theme.surface
+    border.width: theme.edge
+    border.color: theme.stroke
 
     ColumnLayout {
         anchors.fill: parent

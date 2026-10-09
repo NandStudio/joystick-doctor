@@ -27,6 +27,8 @@ Item {
         Rectangle {
             radius: theme.radiusCard
             color: theme.surface
+            border.width: theme.edge
+            border.color: theme.stroke
             Layout.fillWidth: true
             implicitHeight: vigemCol.implicitHeight + 36
             ColumnLayout {
@@ -82,6 +84,8 @@ Item {
         Rectangle {
             radius: theme.radiusCard
             color: theme.surface
+            border.width: theme.edge
+            border.color: theme.stroke
             Layout.fillWidth: true
             implicitHeight: hideCol.implicitHeight + 36
             ColumnLayout {
@@ -138,6 +142,8 @@ Item {
             visible: app.ps3Visible
             radius: theme.radiusCard
             color: theme.surface
+            border.width: theme.edge
+            border.color: theme.stroke
             Layout.fillWidth: true
             implicitHeight: ps3Col.implicitHeight + 36
             ColumnLayout {
