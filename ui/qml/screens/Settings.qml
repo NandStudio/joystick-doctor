@@ -162,7 +162,7 @@ Item {
                             contentItem: Text {
                                 text: parent.text
                                 font: parent.font
-                                color: theme.ink
+                                color: parent.highlighted ? theme.onWash : theme.ink
                                 verticalAlignment: Text.AlignVCenter
                                 leftPadding: 10
                             }
@@ -184,7 +184,7 @@ Item {
                         spacing: 8
                         QuietButton {
                             text: app.langTick >= 0 ? app.label("theme_light") : ""
-                            chosen: !theme.isDark
+                            chosen: !theme.isDark && !theme.isContrast
                             onClicked: app.setTheme("light")
                             Layout.fillWidth: true
                         }
@@ -194,6 +194,12 @@ Item {
                             onClicked: app.setTheme("dark")
                             Layout.fillWidth: true
                         }
+                    }
+                    QuietButton {
+                        text: app.langTick >= 0 ? app.label("theme_contrast") : ""
+                        chosen: theme.isContrast
+                        onClicked: app.setTheme("contrast")
+                        Layout.fillWidth: true
                     }
                     Text {
                         text: "DEBUG"

@@ -6,7 +6,7 @@ from pathlib import Path
 _DIR = Path.home() / "AppData" / "Local" / "joystick-doctor"
 _FILE = _DIR / "settings.json"
 LANGS = ("system", "en", "es")
-THEMES = ("light", "dark")
+THEMES = ("light", "dark", "contrast")
 
 
 def _read() -> dict:
