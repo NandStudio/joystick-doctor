@@ -12,7 +12,7 @@ Window {
     minimumHeight: 800
     visible: true
     title: "Joystick Doctor"
-    color: theme.canvas
+    color: "transparent"
     flags: Qt.Window | Qt.FramelessWindowHint
 
     FontLoader {
@@ -51,6 +51,13 @@ Window {
         target: strongFont
         function onStatusChanged() { win.publishFonts() }
     }
+
+    Rectangle {
+        id: shell
+        anchors.fill: parent
+        radius: win.visibility === Window.Maximized ? 0 : theme.radiusControl
+        color: theme.canvas
+        clip: true
 
     TitleBar {
         id: titleBar
@@ -162,6 +169,7 @@ Window {
 
     ConfirmDialog {
         z: 10
+    }
     }
 
     Shortcut {
