@@ -48,3 +48,13 @@ def save_theme(theme: str) -> None:
     data = _read()
     data["theme"] = theme
     _write(data)
+
+
+def load_debug() -> bool:
+    return bool(_read().get("debug", False))
+
+
+def save_debug(enabled: bool) -> None:
+    data = _read()
+    data["debug"] = bool(enabled)
+    _write(data)

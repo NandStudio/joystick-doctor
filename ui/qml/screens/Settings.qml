@@ -195,6 +195,19 @@ Item {
                             Layout.fillWidth: true
                         }
                     }
+                    Text {
+                        text: "DEBUG"
+                        color: theme.muted
+                        font.family: app.bodyFamily
+                        font.pixelSize: 12
+                        Layout.topMargin: 8
+                    }
+                    QuietButton {
+                        text: app.langTick >= 0 ? app.label("debug_log_chip") : ""
+                        chosen: app.debugEnabled
+                        onClicked: app.setDebug(!app.debugEnabled)
+                        Layout.fillWidth: true
+                    }
                 }
             }
 
