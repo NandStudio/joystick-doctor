@@ -119,69 +119,69 @@ Rectangle {
                     PulseMark {
                         width: 16
                         height: 16
-                        mark: nav.chosen ? theme.ink : theme.stroke
+                        mark: nav.chosen ? theme.onWash : theme.stroke
                         anchors.verticalCenter: parent.verticalCenter
                         visible: nav.modelData.id === "diagnostico"
                     }
                     CrosshairMark {
                         width: 16
                         height: 16
-                        mark: nav.chosen ? theme.ink : theme.stroke
+                        mark: nav.chosen ? theme.onWash : theme.stroke
                         anchors.verticalCenter: parent.verticalCenter
                         visible: nav.modelData.id === "calibracion"
                     }
                     CurveMark {
                         width: 16
                         height: 16
-                        mark: nav.chosen ? theme.ink : theme.stroke
+                        mark: nav.chosen ? theme.onWash : theme.stroke
                         anchors.verticalCenter: parent.verticalCenter
                         visible: nav.modelData.id === "curvas"
                     }
                     SwapMark {
                         width: 16
                         height: 16
-                        mark: nav.chosen ? theme.ink : theme.stroke
+                        mark: nav.chosen ? theme.onWash : theme.stroke
                         anchors.verticalCenter: parent.verticalCenter
                         visible: nav.modelData.id === "remap"
                     }
                     GearMark {
                         width: 16
                         height: 16
-                        mark: nav.chosen ? theme.ink : theme.stroke
+                        mark: nav.chosen ? theme.onWash : theme.stroke
                         anchors.verticalCenter: parent.verticalCenter
                         visible: nav.modelData.id === "sistema"
                     }
                     RowsMark {
                         width: 16
                         height: 16
-                        mark: nav.chosen ? theme.ink : theme.stroke
+                        mark: nav.chosen ? theme.onWash : theme.stroke
                         anchors.verticalCenter: parent.verticalCenter
                         visible: nav.modelData.id === "ajustes"
                     }
                     CardMark {
                         width: 16
                         height: 16
-                        mark: nav.chosen ? theme.ink : theme.stroke
+                        mark: nav.chosen ? theme.onWash : theme.stroke
                         anchors.verticalCenter: parent.verticalCenter
                         visible: nav.modelData.id === "perfiles"
                     }
                     LogMark {
                         width: 16
                         height: 16
-                        mark: nav.chosen ? theme.ink : theme.stroke
+                        mark: nav.chosen ? theme.onWash : theme.stroke
                         anchors.verticalCenter: parent.verticalCenter
                         visible: nav.modelData.id === "registro"
                     }
                     MotorMark {
                         width: 16
                         height: 16
-                        mark: nav.chosen ? theme.ink : theme.stroke
+                        mark: nav.chosen ? theme.onWash : theme.stroke
                         anchors.verticalCenter: parent.verticalCenter
                         visible: nav.modelData.id === "vibracion"
                     }
                     Text {
                         text: nav.text
-                        color: theme.ink
+                        color: nav.chosen ? theme.onWash : theme.ink
                         font.family: app.bodyFamily
                         font.pixelSize: 13
                         font.weight: nav.chosen ? 600 : 400

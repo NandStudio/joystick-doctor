@@ -17,7 +17,7 @@ Button {
     contentItem: Text {
         text: control.text
         font: control.font
-        color: theme.ink
+        color: control.chosen ? theme.onWash : theme.ink
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight

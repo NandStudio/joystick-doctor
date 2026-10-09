@@ -78,7 +78,7 @@ class AppController(QObject):
         self._lang_pref = load_language()
         self._settings_error = False
         self._palette = palette or Palette(self)
-        self._palette.set_dark(load_theme() == "dark")
+        self._palette.set_mode(load_theme())
         self._debug = load_debug()
         set_language(self._lang_pref)
 
@@ -934,9 +934,9 @@ class AppController(QObject):
 
     @Slot(str)
     def setTheme(self, mode: str) -> None:
-        if mode not in ("light", "dark"):
+        if mode not in ("light", "dark", "contrast"):
             return
-        if self._palette is None or (mode == "dark") == self._palette.is_dark():
+        if self._palette is None or mode == self._palette.mode():
             return
         try:
             save_theme(mode)
@@ -945,7 +945,7 @@ class AppController(QObject):
             self.languageChanged.emit()
             return
         self._settings_error = False
-        self._palette.set_dark(mode == "dark")
+        self._palette.set_mode(mode)
         self.languageChanged.emit()
 
     @Slot(bool)
