@@ -16,7 +16,7 @@ from engine.device.pump import DevicePump
 from engine.device.xinput import enumerate_devices as enumerate_xinput
 from engine.guided import GuidedSession
 from engine.pipeline import Calibration, StickCal, apply_calibration, apply_stick
-from engine.prefs import load_language, load_theme, save_language, save_theme
+from engine.prefs import load_debug, load_language, load_theme, save_debug, save_language, save_theme
 from engine.profiles import ProfileReadError, load_profile, profile_key, profile_path, save_profile
 from engine.remap import BUTTONS, RemapConfig, RemapEngine, RemapRule
 from engine.state import DeviceIdentity, NormalizedState
@@ -79,6 +79,7 @@ class AppController(QObject):
         self._settings_error = False
         self._palette = palette or Palette(self)
         self._palette.set_dark(load_theme() == "dark")
+        self._debug = load_debug()
         set_language(self._lang_pref)
 
         self._page = "diagnostico"
@@ -159,17 +160,19 @@ class AppController(QObject):
         self._driver_timer.start()
 
     def _destinations(self) -> list[dict[str, str]]:
-        return [
+        items = [
             {"id": "diagnostico", "label": tr("nav_diagnostico")},
             {"id": "calibracion", "label": tr("nav_calibracion")},
             {"id": "curvas", "label": tr("nav_curvas")},
             {"id": "remap", "label": tr("nav_remap")},
             {"id": "sistema", "label": tr("nav_sistema")},
-            {"id": "ajustes", "label": tr("nav_ajustes")},
             {"id": "perfiles", "label": tr("nav_perfiles")},
-            {"id": "registro", "label": tr("nav_registro")},
-            {"id": "vibracion", "label": tr("nav_vibracion")},
         ]
+        if self._debug:
+            items.append({"id": "registro", "label": tr("nav_registro")})
+        items.append({"id": "vibracion", "label": tr("nav_vibracion")})
+        items.append({"id": "ajustes", "label": tr("nav_ajustes")})
+        return items
 
     def _device_rows(self) -> list[dict[str, object]]:
         open_key = device_key(self._pump.identity) if self._pump else ""
@@ -945,6 +948,27 @@ class AppController(QObject):
         self._palette.set_dark(mode == "dark")
         self.languageChanged.emit()
 
+    @Slot(bool)
+    def setDebug(self, enabled: bool) -> None:
+        enabled = bool(enabled)
+        if enabled == self._debug:
+            return
+        try:
+            save_debug(enabled)
+        except OSError:
+            self._settings_error = True
+            self.languageChanged.emit()
+            return
+        self._settings_error = False
+        self._debug = enabled
+        if not enabled and self._page == "registro":
+            self._page = "ajustes"
+        self.languageChanged.emit()
+        self._emit_chrome()
+
+    def _debug_enabled(self) -> bool:
+        return self._debug
+
     @Slot()
     def openConfigFolder(self) -> None:
         from pathlib import Path
@@ -1453,6 +1477,7 @@ class AppController(QObject):
     uptimeText = Property(str, _uptime_text, notify=chromeChanged)
     detectedPad = Property(str, _detected_pad, notify=chromeChanged)
     languagePref = Property(str, _language_pref, notify=languageChanged)
+    debugEnabled = Property(bool, _debug_enabled, notify=chromeChanged)
     settingsState = Property(str, _settings_state, notify=languageChanged)
     profileState = Property(str, _profile_state, notify=chromeChanged)
     profileCardName = Property(str, _profile_card_name, notify=chromeChanged)
