@@ -2,11 +2,12 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Window
 import "../controls"
-import "../glyphs"
 
 Rectangle {
     id: root
     color: theme.surface
+    border.width: theme.edge
+    border.color: theme.stroke
     implicitHeight: 44
 
     MouseArea {
@@ -25,10 +26,16 @@ Rectangle {
         anchors.leftMargin: 16
         anchors.verticalCenter: parent.verticalCenter
         spacing: 8
-        PadMark {
+        Image {
             width: 28
             height: 18
             anchors.verticalCenter: parent.verticalCenter
+            fillMode: Image.PreserveAspectFit
+            sourceSize.width: 84
+            sourceSize.height: 54
+            source: (theme.isDark || theme.isContrast)
+                    ? app.assetUrl("logo-theme-dark.svg")
+                    : app.assetUrl("logo-theme-light.svg")
         }
         Text {
             text: app.guideOpen ? (app.langTick >= 0 ? app.label("guide_title") : "") : "Joystick Doctor"
