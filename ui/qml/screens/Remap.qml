@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 import "../controls"
 
@@ -141,13 +140,11 @@ Item {
                     font.family: app.bodyFamily
                     font.pixelSize: 12
                 }
-                ComboBox {
+                FieldCombo {
                     model: app.buttonNames
                     currentIndex: app.remapDestIndex
                     onActivated: app.setRemapDest(currentIndex)
                     Layout.fillWidth: true
-                    font.family: app.bodyFamily
-                    font.pixelSize: 14
                 }
                 Text {
                     text: app.langTick >= 0 ? app.label("remap_hold_label") : ""
@@ -155,13 +152,11 @@ Item {
                     font.family: app.bodyFamily
                     font.pixelSize: 12
                 }
-                ComboBox {
+                FieldCombo {
                     model: app.holdNames
                     currentIndex: app.remapHoldIndex
                     onActivated: app.setRemapHold(currentIndex)
                     Layout.fillWidth: true
-                    font.family: app.bodyFamily
-                    font.pixelSize: 14
                 }
                 RowLayout {
                     Layout.alignment: Qt.AlignRight
