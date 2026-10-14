@@ -4,152 +4,200 @@ Item {
     id: root
     property bool dim: !app.hasSample
     property string focusPart: "all"
-    property color line: dim ? theme.stroke : theme.ink
 
-    function lit(part) {
-        return focusPart === "all" || focusPart === part
+    function lit(name) {
+        return focusPart === "all" || focusPart === name
     }
 
-    component Cap: Rectangle {
+    function nudgeX() {
+        var x = 0
+        if (app.padLeft)
+            x -= 8
+        if (app.padRight)
+            x += 8
+        return root.dim ? 0 : x
+    }
+
+    function nudgeY() {
+        var y = 0
+        if (app.padUp)
+            y -= 8
+        if (app.padDown)
+            y += 8
+        return root.dim ? 0 : y
+    }
+
+    Item {
+        id: board
+        anchors.centerIn: parent
+        width: Math.min(parent.width, parent.height * 591.43 / 423.76)
+        height: width * 423.76 / 591.43
+
+        PadPart { file: "body.svg"; originW: 591.43; originH: 423.76; active: true }
+        PadPart {
+            file: "left-button.svg"
+            originX: 76.5; originY: 0; originW: 102.61; originH: 36.71
+            down: app.padLb
+            active: root.lit("triggers") || root.lit("buttons")
+        }
+        PadPart {
+            file: "right-button.svg"
+            originX: 414.5; originY: 0; originW: 100.98; originH: 34.95
+            down: app.padRb
+            active: root.lit("triggers") || root.lit("buttons")
+        }
+
+        PadPart {
+            file: "stick-left-well.svg"
+            originX: 83.4; originY: 45.9; originW: 90.5; originH: 90.3
+            active: root.lit("left")
+        }
+        PadPart {
+            file: "stick-left-ring.svg"
+            originX: 92.2; originY: 55.1; originW: 72.8; originH: 72.6
+            active: root.lit("left")
+        }
+        PadPart {
+            file: "stick-left-cap.svg"
+            originX: 103.9; originY: 67.0; originW: 49.1; originH: 48.9
+            shiftX: root.dim ? 0 : app.lx * 14
+            shiftY: root.dim ? 0 : -app.ly * 14
+            down: app.padLs
+            active: root.lit("left")
+        }
+
+        PadPart {
+            file: "dpad-well.svg"
+            originX: 150.6; originY: 132.8; originW: 116.4; originH: 116.6
+            active: root.lit("buttons")
+        }
+        PadPart {
+            file: "dpad-disc.svg"
+            originX: 159.1; originY: 141.2; originW: 99.8; originH: 99.7
+            active: root.lit("buttons")
+        }
+        PadPart {
+            file: "dpad-cross.svg"
+            originX: 162.7; originY: 143.4; originW: 93.7; originH: 94.8
+            shiftX: root.nudgeX()
+            shiftY: root.nudgeY()
+            down: app.padUp || app.padDown || app.padLeft || app.padRight
+            active: root.lit("buttons")
+        }
+
+        PadPart {
+            file: "stick-right-well.svg"
+            originX: 337.7; originY: 148.0; originW: 90.3; originH: 91.0
+            active: root.lit("right")
+        }
+        PadPart {
+            file: "stick-right-ring.svg"
+            originX: 346.7; originY: 157.0; originW: 72.3; originH: 72.9
+            active: root.lit("right")
+        }
+        PadPart {
+            file: "stick-right-cap.svg"
+            originX: 358.1; originY: 169.0; originW: 49.3; originH: 48.9
+            shiftX: root.dim ? 0 : app.rx * 14
+            shiftY: root.dim ? 0 : -app.ry * 14
+            down: app.padRs
+            active: root.lit("right")
+        }
+
+        PadPart {
+            file: "button-view-ring.svg"
+            originX: 220.8; originY: 87.6; originW: 32.2; originH: 25.5
+            active: root.lit("buttons")
+        }
+        PadPart {
+            file: "button-view.svg"
+            originX: 230.0; originY: 92.7; originW: 11.9; originH: 14.4
+            down: app.padBack
+            active: root.lit("buttons")
+        }
+        PadPart {
+            file: "button-menu-ring.svg"
+            originX: 343.6; originY: 88.1; originW: 31.5; originH: 25.4
+            active: root.lit("buttons")
+        }
+        PadPart {
+            file: "button-menu.svg"
+            originX: 355.6; originY: 93.0; originW: 11.1; originH: 14.2
+            down: app.padStart
+            active: root.lit("buttons")
+        }
+
+        PadPart {
+            file: "button-y.svg"
+            originX: 444.7; originY: 35.8; originW: 44.1; originH: 44.2
+            down: app.padY
+            active: root.lit("buttons")
+        }
+        PadPart {
+            file: "button-x.svg"
+            originX: 402.0; originY: 77.0; originW: 43.8; originH: 43.8
+            down: app.padX
+            active: root.lit("buttons")
+        }
+        PadPart {
+            file: "button-b.svg"
+            originX: 486.6; originY: 77.0; originW: 44.2; originH: 43.9
+            down: app.padB
+            active: root.lit("buttons")
+        }
+        PadPart {
+            file: "button-a.svg"
+            originX: 444.8; originY: 117.2; originW: 44.0; originH: 44.6
+            down: app.padA
+            active: root.lit("buttons")
+        }
+
+        FaceLetter {
+            glyph: "Y"
+            centerX: 466.8; centerY: 57.9
+            down: app.padY
+            active: root.lit("buttons")
+        }
+        FaceLetter {
+            glyph: "X"
+            centerX: 423.9; centerY: 98.9
+            down: app.padX
+            active: root.lit("buttons")
+        }
+        FaceLetter {
+            glyph: "B"
+            centerX: 508.7; centerY: 99.0
+            down: app.padB
+            active: root.lit("buttons")
+        }
+        FaceLetter {
+            glyph: "A"
+            centerX: 466.8; centerY: 139.5
+            down: app.padA
+            active: root.lit("buttons")
+        }
+
+    }
+
+    component FaceLetter: Item {
         property string glyph: ""
+        property real centerX: 0
+        property real centerY: 0
         property bool down: false
         property bool active: true
-        width: 32
-        height: 32
-        radius: 16
-        color: down && active && !root.dim ? theme.ink : "transparent"
-        border.width: 2
-        border.color: active && !root.dim ? theme.ink : theme.stroke
+        x: (centerX - 14) * board.width / 591.43
+        y: (centerY - 14) * board.height / 423.76
+        width: 28 * board.width / 591.43
+        height: 28 * board.height / 423.76
+        opacity: active ? 1 : 0.35
         Text {
             anchors.centerIn: parent
             text: parent.glyph
-            color: parent.down && parent.active && !root.dim ? theme.onInk : parent.border.color
+            color: parent.down && parent.active && !root.dim ? theme.ink : theme.stroke
             font.family: app.bodyFamily
-            font.pixelSize: 12
+            font.pixelSize: Math.max(10, 16 * board.width / 591.43)
             font.weight: 600
         }
     }
 
-    component StickWell: Item {
-        property real axisX: 0
-        property real axisY: 0
-        property bool down: false
-        property bool active: true
-        property color line: active && !root.dim ? theme.ink : theme.stroke
-        width: 88
-        height: 88
-        Rectangle {
-            anchors.fill: parent
-            radius: width / 2
-            color: "transparent"
-            border.width: 2
-            border.color: parent.line
-        }
-        Rectangle {
-            width: 16
-            height: 16
-            radius: 8
-            color: parent.line
-            x: parent.width / 2 - width / 2 + (root.dim ? 0 : parent.axisX) * 28
-            y: parent.height / 2 - height / 2 - (root.dim ? 0 : parent.axisY) * 28
-        }
-    }
-
-    Column {
-        anchors.fill: parent
-        anchors.margins: 24
-        spacing: 16
-
-        Item {
-            width: parent.width
-            height: 32
-            Cap {
-                glyph: "L"
-                width: 48
-                down: app.padLb
-                active: root.lit("triggers") || root.lit("buttons")
-                anchors.left: parent.left
-            }
-            Cap {
-                glyph: "R"
-                width: 48
-                down: app.padRb
-                active: root.lit("triggers") || root.lit("buttons")
-                anchors.right: parent.right
-            }
-        }
-
-        Item {
-            width: parent.width
-            height: parent.height - 64
-
-            Rectangle {
-                anchors.fill: parent
-                radius: theme.radiusCard
-                color: "transparent"
-                border.width: 2.75
-                border.color: root.line
-            }
-
-            StickWell {
-                axisX: app.lx
-                axisY: app.ly
-                down: app.padLs
-                active: root.lit("left")
-                anchors.left: parent.left
-                anchors.leftMargin: 36
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.verticalCenterOffset: -36
-            }
-
-            Item {
-                width: 72
-                height: 72
-                anchors.left: parent.left
-                anchors.leftMargin: 44
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 28
-                opacity: root.lit("buttons") && !root.dim ? 1 : 0.45
-                Rectangle { width: 22; height: 22; radius: 4; x: 25; y: 0; color: app.padUp ? theme.ink : "transparent"; border.color: root.line; border.width: 2 }
-                Rectangle { width: 22; height: 22; radius: 4; x: 0; y: 25; color: app.padLeft ? theme.ink : "transparent"; border.color: root.line; border.width: 2 }
-                Rectangle { width: 22; height: 22; radius: 4; x: 50; y: 25; color: app.padRight ? theme.ink : "transparent"; border.color: root.line; border.width: 2 }
-                Rectangle { width: 22; height: 22; radius: 4; x: 25; y: 50; color: app.padDown ? theme.ink : "transparent"; border.color: root.line; border.width: 2 }
-            }
-
-            Item {
-                width: 112
-                height: 120
-                anchors.right: parent.right
-                anchors.rightMargin: 48
-                anchors.top: parent.top
-                anchors.topMargin: 28
-                opacity: root.lit("buttons") && !root.dim ? 1 : 0.45
-                Cap { glyph: "Y"; anchors.horizontalCenter: parent.horizontalCenter; y: 0; down: app.padY; active: true }
-                Cap { glyph: "X"; x: 0; y: 44; down: app.padX; active: true }
-                Cap { glyph: "B"; x: 80; y: 44; down: app.padB; active: true }
-                Cap { glyph: "A"; anchors.horizontalCenter: parent.horizontalCenter; y: 88; down: app.padA; active: true }
-            }
-
-            StickWell {
-                axisX: app.rx
-                axisY: app.ry
-                down: app.padRs
-                active: root.lit("right")
-                anchors.right: parent.right
-                anchors.rightMargin: 64
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 24
-            }
-
-            Row {
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 8
-                opacity: root.lit("buttons") && !root.dim ? 1 : 0.45
-                Cap { glyph: "−"; width: 36; down: app.padBack; active: true }
-                Cap { glyph: "G"; down: app.padGuide; active: true }
-                Cap { glyph: "+"; width: 36; down: app.padStart; active: true }
-            }
-        }
-    }
 }
