@@ -65,9 +65,19 @@ ComboBox {
         padding: 4
         contentItem: ListView {
             clip: true
-            implicitHeight: contentHeight
+            implicitHeight: Math.min(contentHeight, 6 * 36)
             model: box.popup.visible ? box.delegateModel : null
             currentIndex: box.highlightedIndex
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar {
+                policy: ScrollBar.AsNeeded
+                width: 6
+                contentItem: Rectangle {
+                    implicitWidth: 4
+                    radius: 2
+                    color: theme.stroke
+                }
+            }
         }
         background: Rectangle {
             radius: theme.radiusControl
