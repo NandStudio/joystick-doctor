@@ -9,6 +9,10 @@ Item {
         return focusPart === "all" || focusPart === name
     }
 
+    function moved(x, y) {
+        return x * x + y * y > 0.02
+    }
+
     function nudgeX() {
         var x = 0
         if (app.padLeft)
@@ -62,7 +66,7 @@ Item {
             originX: 103.9; originY: 67.0; originW: 49.1; originH: 48.9
             shiftX: root.dim ? 0 : app.lx * 14
             shiftY: root.dim ? 0 : -app.ly * 14
-            down: app.padLs
+            down: !root.dim && (app.padLs || root.moved(app.lx, app.ly))
             active: root.lit("left")
         }
 
@@ -100,7 +104,7 @@ Item {
             originX: 358.1; originY: 169.0; originW: 49.3; originH: 48.9
             shiftX: root.dim ? 0 : app.rx * 14
             shiftY: root.dim ? 0 : -app.ry * 14
-            down: app.padRs
+            down: !root.dim && (app.padRs || root.moved(app.rx, app.ry))
             active: root.lit("right")
         }
 
