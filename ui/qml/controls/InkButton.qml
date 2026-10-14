@@ -9,6 +9,8 @@ Button {
     implicitHeight: 36
     leftPadding: 16
     rightPadding: 16
+    topPadding: 4
+    bottomPadding: 8
     spacing: 0
 
     contentItem: Text {

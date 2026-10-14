@@ -45,10 +45,11 @@ Item {
         Flickable {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            contentHeight: ruleCol.implicitHeight
+            contentHeight: ruleCol.implicitHeight + 8
             clip: true
             Column {
                 id: ruleCol
+                y: 4
                 width: parent.width
                 spacing: 8
                 Repeater {
@@ -116,12 +117,13 @@ Item {
                 Flickable {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    contentHeight: sourceFlow.implicitHeight
+                    contentHeight: sourceFlow.implicitHeight + 8
                     clip: true
                     Flow {
                         id: sourceFlow
+                        y: 4
                         width: parent.width
-                        spacing: 6
+                        spacing: 8
                         Repeater {
                             model: app.remapSources
                             delegate: QuietButton {
