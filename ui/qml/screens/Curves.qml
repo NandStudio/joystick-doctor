@@ -51,7 +51,10 @@ Item {
                 Canvas {
                     id: plot
                     anchors.fill: parent
-                    anchors.margins: 18
+                    anchors.leftMargin: 22
+                    anchors.rightMargin: 22
+                    anchors.topMargin: 40
+                    anchors.bottomMargin: 40
                     property color axis: theme.stroke
                     property color curve: theme.ink
                     onAxisChanged: requestPaint()
@@ -94,7 +97,8 @@ Item {
                 Text {
                     anchors.left: parent.left
                     anchors.bottom: parent.bottom
-                    anchors.margins: 10
+                    anchors.leftMargin: 22
+                    anchors.bottomMargin: 12
                     text: app.langTick >= 0 ? app.label("axis_in") : ""
                     color: theme.muted
                     font.family: app.bodyFamily
@@ -103,7 +107,8 @@ Item {
                 Text {
                     anchors.left: parent.left
                     anchors.top: parent.top
-                    anchors.margins: 10
+                    anchors.leftMargin: 22
+                    anchors.topMargin: 12
                     text: app.langTick >= 0 ? app.label("axis_out") : ""
                     color: theme.muted
                     font.family: app.bodyFamily
