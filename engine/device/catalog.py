@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 
 from engine.device.ds3 import CLONE_IDS as DS3_CLONES
@@ -44,9 +45,15 @@ _XINPUT_ALSO_HID = {
 }
 
 
-def _is_xinput_hid_path(path: bytes | str) -> bool:
+_IG_INSTANCE = re.compile(r"IG_(\d+)", re.IGNORECASE)
+
+
+def _xinput_instance(path: bytes | str) -> int | None:
     text = path.decode("ascii", errors="replace") if isinstance(path, bytes) else path
-    return "IG_00" in text.upper()
+    match = _IG_INSTANCE.search(text)
+    if match is None:
+        return None
+    return int(match.group(1))
 
 
 def _hidden_by_xinput(
@@ -78,11 +85,12 @@ def _classify_hid(device: DeviceIdentity) -> DeviceIdentity:
 
 
 def enumerate_all() -> list[DeviceIdentity]:
-    xinput_devs = [_enrich_xinput(dev) for dev in enumerate_xinput()]
+    hid_devs = enumerate_hid()
+    xinput_devs = _bind_xinput_identity(enumerate_xinput(), hid_devs)
     hide_xinput_hid = bool(xinput_devs)
     devices = list(xinput_devs)
-    for hid_dev in enumerate_hid():
-        if _is_xinput_hid_path(hid_dev.path):
+    for hid_dev in hid_devs:
+        if _xinput_instance(hid_dev.path) is not None:
             continue
         if hide_xinput_hid and _hidden_by_xinput(hid_dev, xinput_devs):
             continue
@@ -104,19 +112,57 @@ def _path_key(path: bytes | str) -> str:
     return path
 
 
-def _enrich_xinput(device: DeviceIdentity) -> DeviceIdentity:
-    if device.vendor_id:
-        return device
-    ig = [dev for dev in enumerate_hid() if _is_xinput_hid_path(dev.path)]
-    if len(ig) != 1:
-        return device
-    extra = ig[0]
-    return replace(
-        device,
-        vendor_id=extra.vendor_id,
-        product_id=extra.product_id,
-        product_name=f"{extra.product_name} (XInput)",
-    )
+def _bind_xinput_identity(
+    devices: list[DeviceIdentity], hid_devs: list[DeviceIdentity]
+) -> list[DeviceIdentity]:
+    """Copy VID/PID only from the HID interface of that XInput slot.
+
+    A single IG_00 used to be stamped onto every slot. The second pad,
+    including one that appears when ViGEm is installed, then opened the
+    first pad's profile and its remaps.
+    """
+    interfaces: list[tuple[int, DeviceIdentity]] = []
+    for hid_dev in hid_devs:
+        instance = _xinput_instance(hid_dev.path)
+        if instance is None:
+            continue
+        interfaces.append((instance, hid_dev))
+    interfaces.sort(key=lambda item: item[0])
+
+    assigned: dict[int, DeviceIdentity] = {}
+    used: set[int] = set()
+    for device in devices:
+        if device.vendor_id or device.index is None:
+            continue
+        for instance, hid_dev in interfaces:
+            if instance == device.index and instance not in used:
+                assigned[device.index] = hid_dev
+                used.add(instance)
+                break
+    pending = [
+        device
+        for device in devices
+        if device.index is not None and device.index not in assigned and not device.vendor_id
+    ]
+    leftover = [(instance, hid_dev) for instance, hid_dev in interfaces if instance not in used]
+    if len(pending) == 1 and len(leftover) == 1:
+        assigned[pending[0].index] = leftover[0][1]
+
+    bound: list[DeviceIdentity] = []
+    for device in devices:
+        extra = assigned.get(device.index) if device.index is not None else None
+        if extra is None:
+            bound.append(device)
+            continue
+        bound.append(
+            replace(
+                device,
+                vendor_id=extra.vendor_id,
+                product_id=extra.product_id,
+                product_name=f"{extra.product_name} (XInput)",
+            )
+        )
+    return bound
 
 
 def hide_paths_for(identity: DeviceIdentity) -> list[bytes | str]:
@@ -124,7 +170,7 @@ def hide_paths_for(identity: DeviceIdentity) -> list[bytes | str]:
         return [identity.path]
     matches = []
     for hid_dev in enumerate_hid():
-        if not _is_xinput_hid_path(hid_dev.path):
+        if _xinput_instance(hid_dev.path) is None:
             continue
         if identity.vendor_id and (
             hid_dev.vendor_id != identity.vendor_id
