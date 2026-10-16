@@ -5,7 +5,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from engine.pipeline import Calibration, StickCal, TriggerCal
-from engine.remap import RemapRule
+from engine.remap import BUTTONS, RemapRule
 from engine.state import DeviceIdentity
 
 _DIR = Path.home() / "AppData" / "Local" / "joystick-doctor" / "profiles"
@@ -70,14 +70,7 @@ def load_profile(identity: DeviceIdentity) -> tuple[Calibration, list[RemapRule]
             lt=TriggerCal(**raw_cal.get("lt", {})),
             rt=TriggerCal(**raw_cal.get("rt", {})),
         )
-        rules = [
-            RemapRule(
-                sources=tuple(item["sources"]),
-                dest=item["dest"],
-                toggle_hold=item.get("toggle_hold"),
-            )
-            for item in data.get("remap", [])
-        ]
+        rules = _rules_from(data.get("remap"))
     except (OSError, json.JSONDecodeError, TypeError, KeyError):
         raise ProfileReadError(str(path)) from None
     measured = {
@@ -85,3 +78,37 @@ def load_profile(identity: DeviceIdentity) -> tuple[Calibration, list[RemapRule]
         "summary": data.get("summary") or "",
     }
     return cal, rules, measured
+
+
+def _rules_from(raw: object) -> list[RemapRule]:
+    if not isinstance(raw, list):
+        return []
+    rules: list[RemapRule] = []
+    for item in raw:
+        rule = _rule_from(item)
+        if rule is not None:
+            rules.append(rule)
+    return rules
+
+
+def _rule_from(item: object) -> RemapRule | None:
+    if not isinstance(item, dict):
+        return None
+    sources = item.get("sources")
+    dest = item.get("dest")
+    if isinstance(sources, str):
+        sources = (sources,)
+    elif isinstance(sources, (list, tuple)):
+        sources = tuple(src for src in sources if isinstance(src, str))
+    else:
+        return None
+    if not isinstance(dest, str) or not sources:
+        return None
+    hold = item.get("toggle_hold")
+    if hold is not None and not isinstance(hold, str):
+        return None
+    if dest not in BUTTONS or any(src not in BUTTONS for src in sources):
+        return None
+    if hold is not None and hold not in BUTTONS:
+        return None
+    return RemapRule(sources, dest, hold)
