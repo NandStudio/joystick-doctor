@@ -19,6 +19,9 @@ _DS4_PIDS = {0x05C4, 0x09CC, 0x0BA0}
 _DS5_PIDS = {0x0CE6, 0x0DF2}
 _LOGITECH_VID = 0x046D
 _F310_PID = 0xC21D
+# DirectInput gamepads that share one report: hat, then X A B Y LB RB LT RT Back Start LS RS.
+# RumblePad 2 is C218 (USB) and C219 (cordless). C216 is the Dual Action / F310 in D.
+_LOGITECH_DINPUT = {0xC216, 0xC218, 0xC219}
 
 _BUTTON_ORDER = (
     "a",
@@ -144,6 +147,39 @@ def _parse_x360(data: bytes) -> NormalizedState:
     return state
 
 
+def _logitech_body(data: bytes) -> bytes:
+    # Numbered reports start with 0x01. The hat then sits at byte 5.
+    if len(data) >= 7 and data[0] == 0x01:
+        hat = data[5] & 0x0F
+        if hat <= 8 or hat == 0x0F:
+            return data[1:]
+    return _payload(data)
+
+
+def _parse_logitech_dinput(data: bytes) -> NormalizedState:
+    payload = _logitech_body(data)
+    state = NormalizedState(timestamp=time.perf_counter())
+    if len(payload) < 6:
+        return state
+    _apply_sticks(state, payload)
+    packed = payload[4]
+    _apply_hat(state, packed)
+    state.x = bool(packed & 0x10)
+    state.a = bool(packed & 0x20)
+    state.b = bool(packed & 0x40)
+    state.y = bool(packed & 0x80)
+    bits = payload[5]
+    state.lb = bool(bits & 0x01)
+    state.rb = bool(bits & 0x02)
+    state.lt = 1.0 if bits & 0x04 else 0.0
+    state.rt = 1.0 if bits & 0x08 else 0.0
+    state.back = bool(bits & 0x10)
+    state.start = bool(bits & 0x20)
+    state.ls = bool(bits & 0x40)
+    state.rs = bool(bits & 0x80)
+    return state
+
+
 def _parse_generic_u8(payload: bytes) -> NormalizedState:
     state = NormalizedState(timestamp=time.perf_counter())
     if len(payload) >= 4:
@@ -194,6 +230,8 @@ def parse_report(data: bytes, identity: DeviceIdentity | None = None) -> Normali
         return _parse_x360(data)
     vid = identity.vendor_id if identity else 0
     pid = identity.product_id if identity else 0
+    if vid == _LOGITECH_VID and pid in _LOGITECH_DINPUT:
+        return _parse_logitech_dinput(data)
     if vid == _LOGITECH_VID and pid == _F310_PID:
         return _parse_dup16(data)
     if _looks_like_dup16(data):
