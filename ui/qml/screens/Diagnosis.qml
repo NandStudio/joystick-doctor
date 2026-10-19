@@ -123,6 +123,20 @@ Item {
                             font.pixelSize: 15
                             font.weight: 600
                         }
+                        Text {
+                            text: app.langTick >= 0 ? app.label("col_stick_right") : ""
+                            color: theme.muted
+                            font.family: app.bodyFamily
+                            font.pixelSize: 12
+                            topPadding: 6
+                        }
+                        Text {
+                            text: app.stickRightText
+                            color: theme.ink
+                            font.family: app.bodyFamily
+                            font.pixelSize: 15
+                            font.weight: 600
+                        }
                     }
                 }
 

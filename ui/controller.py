@@ -1374,6 +1374,11 @@ class AppController(QObject):
             return tr("no_sample")
         return f"{self._lx:+.2f}, {self._ly:+.2f}"
 
+    def _stick_right_text(self) -> str:
+        if not self._has_sample:
+            return tr("no_sample")
+        return f"{self._rx:+.2f}, {self._ry:+.2f}"
+
     def _lt_text(self) -> str:
         if not self._has_sample:
             return tr("no_sample")
@@ -1449,6 +1454,7 @@ class AppController(QObject):
     packetText = Property(str, _packet_text, notify=frame)
     deadzoneText = Property(str, _deadzone_text, notify=frame)
     stickText = Property(str, _stick_text, notify=frame)
+    stickRightText = Property(str, _stick_right_text, notify=frame)
     ltText = Property(str, _lt_text, notify=frame)
     rtText = Property(str, _rt_text, notify=frame)
     vigemWord = Property(str, _vigem_word, notify=chromeChanged)
