@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import "../controls"
 
 Rectangle {
     color: theme.surface
@@ -62,6 +63,15 @@ Rectangle {
             font.pixelSize: 12
             elide: Text.ElideRight
             Layout.fillWidth: true
+            Layout.alignment: Qt.AlignVCenter
+        }
+
+        InkButton {
+            size: 0.8
+            font.pixelSize: 13
+            text: app.virtualLabel
+            Layout.alignment: Qt.AlignVCenter
+            onClicked: app.toggleVirtual()
         }
     }
 }
