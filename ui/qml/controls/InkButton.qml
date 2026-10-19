@@ -3,14 +3,15 @@ import QtQuick.Controls
 
 Button {
     id: control
+    property real size: 1
     font.family: app.strongFamily
-    font.pixelSize: 14
+    font.pixelSize: Math.round(14 * size)
     font.weight: 600
-    implicitHeight: 36
-    leftPadding: 16
-    rightPadding: 16
-    topPadding: 4
-    bottomPadding: 8
+    implicitHeight: Math.round(36 * size)
+    leftPadding: Math.round(16 * size)
+    rightPadding: Math.round(16 * size)
+    topPadding: Math.round(4 * size)
+    bottomPadding: Math.round(8 * size)
     spacing: 0
 
     contentItem: Text {
@@ -25,13 +26,13 @@ Button {
     background: Item {
         Rectangle {
             anchors.fill: parent
-            radius: theme.radiusControl
+            radius: Math.round(theme.radiusControl * control.size)
             color: control.down ? theme.inkPressed : theme.ink
         }
         Rectangle {
             anchors.fill: parent
-            anchors.margins: -4
-            radius: theme.radiusControl + 4
+            anchors.margins: -Math.round(4 * control.size)
+            radius: Math.round(theme.radiusControl * control.size) + Math.round(4 * control.size)
             color: "transparent"
             border.width: 2
             border.color: control.activeFocus ? theme.ink : "transparent"
