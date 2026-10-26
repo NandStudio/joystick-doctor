@@ -17,7 +17,7 @@ from engine.device.pump import DevicePump
 from engine.device.xinput import enumerate_devices as enumerate_xinput
 from engine.guided import GuidedSession
 from engine.pipeline import Calibration, StickCal, apply_calibration, apply_stick
-from engine.prefs import load_debug, load_language, load_theme, save_debug, save_language, save_theme
+from engine.prefs import load_debug, load_language, load_theme, load_thanks_hidden, save_debug, save_language, save_theme, save_thanks_hidden
 from engine.supportlog import logs_dir, set_snapshot, write_failure
 from engine.version import APP_VERSION
 from engine.profiles import ProfileReadError, load_profile, profile_key, profile_path, save_profile
@@ -87,6 +87,10 @@ class AppController(QObject):
         self._palette.changed.connect(self.apply_brand_icon)
         self._palette.set_mode(load_theme())
         self._debug = load_debug()
+        self._thanks_hidden = load_thanks_hidden()
+        self._thanks_open = False
+        self._thanks_pending = False
+        self._virtual_thanked = False
         set_language(self._lang_pref)
 
         self._page = "diagnostico"
@@ -214,6 +218,7 @@ class AppController(QObject):
         self._on_yes = None
         self._emit_chrome()
         self._show_next_confirm()
+        self._flush_thanks()
 
     def _refresh_drivers(self) -> None:
         vigem = tr("word_active") if vigem_installed() else tr("word_absent")
@@ -223,6 +228,7 @@ class AppController(QObject):
         self._vigem_word = vigem
         self._hid_word = hide
         self._emit_chrome()
+        self._flush_thanks()
 
     def _log_event(self, level: str, text: str) -> None:
         self._log.append(
@@ -591,6 +597,9 @@ class AppController(QObject):
         self._log_event("OK", tr("log_virtual_on"))
         self._set_notice(tr("virtual_running", note=note))
         self._refresh_drivers()
+        if not self._virtual_thanked:
+            self._virtual_thanked = True
+            self._offer_thanks()
 
     @Slot()
     def confirmYes(self) -> None:
@@ -669,6 +678,7 @@ class AppController(QObject):
         self.curveChanged.emit()
         self.guideChanged.emit()
         self.frame.emit()
+        self._offer_thanks()
 
     @Slot()
     def restoreFactory(self) -> None:
@@ -1058,6 +1068,53 @@ class AppController(QObject):
             return
         QDesktopServices.openUrl(QUrl(url))
 
+    def _offer_thanks(self) -> None:
+        if self._thanks_hidden or self._thanks_open or self._thanks_pending:
+            return
+        if self._first_run_open() or self._confirm_open:
+            self._thanks_pending = True
+            return
+        self._thanks_open = True
+        self._emit_chrome()
+
+    def _flush_thanks(self) -> None:
+        if not self._thanks_pending or self._thanks_hidden or self._thanks_open:
+            return
+        if self._first_run_open() or self._confirm_open:
+            return
+        self._thanks_pending = False
+        self._thanks_open = True
+        self._emit_chrome()
+
+    def _silence_thanks(self) -> None:
+        self._thanks_open = False
+        self._thanks_pending = False
+        self._thanks_hidden = True
+        try:
+            save_thanks_hidden(True)
+        except OSError as exc:
+            self._note_failure("save thanks", exc)
+        self._emit_chrome()
+
+    @Slot()
+    def thanksSupport(self) -> None:
+        self._silence_thanks()
+        self.openDonate()
+
+    @Slot()
+    def thanksLater(self) -> None:
+        if not self._thanks_open:
+            return
+        self._thanks_open = False
+        self._emit_chrome()
+
+    @Slot()
+    def thanksNever(self) -> None:
+        self._silence_thanks()
+
+    def _thanks_open_value(self) -> bool:
+        return self._thanks_open
+
     def _note_failure(self, context: str, exc: BaseException | None) -> None:
         write_failure(context, exc)
 
@@ -1089,6 +1146,7 @@ class AppController(QObject):
     def dismissFirstRun(self) -> None:
         self._first_run_dismissed = True
         self._emit_chrome()
+        self._flush_thanks()
 
     @Slot()
     def installBoth(self) -> None:
@@ -1548,6 +1606,7 @@ class AppController(QObject):
     virtualRunning = Property(bool, _virtual_running, notify=chromeChanged)
     virtualLabel = Property(str, _virtual_label, notify=chromeChanged)
     confirmOpen = Property(bool, _confirm_open_value, notify=chromeChanged)
+    thanksOpen = Property(bool, _thanks_open_value, notify=chromeChanged)
     confirmTitle = Property(str, _confirm_title_value, notify=chromeChanged)
     confirmBody = Property(str, _confirm_body_value, notify=chromeChanged)
     guideOpen = Property(bool, _guide_open, notify=guideChanged)
