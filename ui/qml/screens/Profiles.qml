@@ -101,12 +101,6 @@ Item {
                     wrapMode: Text.WordWrap
                     Layout.fillWidth: true
                 }
-                Text {
-                    text: app.profileWord
-                    color: theme.muted
-                    font.family: app.bodyFamily
-                    font.pixelSize: 13
-                }
                 QuietButton {
                     framed: true
                     text: app.langTick >= 0 ? app.label("edit_profile") : ""

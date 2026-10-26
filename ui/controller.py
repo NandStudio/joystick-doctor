@@ -276,7 +276,7 @@ class AppController(QObject):
         self._rules = list(rules)
         with self._remap_lock:
             self._remap = RemapEngine(RemapConfig(list(self._rules)))
-        self._profile_name = f"{profile_key(device)}.json"
+        self._profile_name = self._profile_label(device)
         self._measured = measured
 
     def _stop_pump(self) -> None:
@@ -600,21 +600,25 @@ class AppController(QObject):
     def confirmNo(self) -> None:
         self._close_confirm()
 
+    def _profile_label(self, device: DeviceIdentity) -> str:
+        name = device.product_name.strip()
+        return name or profile_key(device)
+
     def _write_profile(self, clear_measured: bool = False) -> None:
         if self._pump is None:
             return
         with self._cal_lock:
             cal = self._cal
-        path = save_profile(
+        save_profile(
             self._pump.identity,
             cal,
             self._rules,
             measured=None if clear_measured else self._measured,
             clear_measured=clear_measured,
         )
-        self._profile_name = path.name
+        self._profile_name = self._profile_label(self._pump.identity)
         self._profile_error = False
-        self._log_event("OK", tr("log_profile", name=path.name))
+        self._log_event("OK", tr("log_profile", name=self._profile_name))
 
     @Slot()
     def startGuide(self) -> None:
