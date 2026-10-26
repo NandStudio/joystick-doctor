@@ -17,6 +17,7 @@ from engine.device.xinput import enumerate_devices as enumerate_xinput
 from engine.guided import GuidedSession
 from engine.pipeline import Calibration, StickCal, apply_calibration, apply_stick
 from engine.prefs import load_debug, load_language, load_theme, save_debug, save_language, save_theme
+from engine.supportlog import logs_dir, set_snapshot, write_failure
 from engine.profiles import ProfileReadError, load_profile, profile_key, profile_path, save_profile
 from engine.remap import BUTTONS, RemapConfig, RemapEngine, RemapRule
 from engine.state import DeviceIdentity, NormalizedState
@@ -48,14 +49,16 @@ class _Download(QThread):
     finished_ok = Signal(object)
     finished_err = Signal(str)
 
-    def __init__(self, fn):
+    def __init__(self, fn, context: str = "download"):
         super().__init__()
         self._fn = fn
+        self._context = context
 
     def run(self) -> None:
         try:
             self.finished_ok.emit(self._fn())
         except Exception as exc:
+            write_failure(self._context, exc)
             self.finished_err.emit(str(exc))
 
 
@@ -139,6 +142,7 @@ class AppController(QObject):
         self._on_yes = None
         self._download: _Download | None = None
 
+        set_snapshot(self._failure_snapshot)
         self._refresh_drivers()
         self._bridge = _Bridge()
         self._bridge.added.connect(self._add_device)
@@ -245,7 +249,8 @@ class AppController(QObject):
         self._curve_error = ""
         try:
             loaded = load_profile(device)
-        except ProfileReadError:
+        except ProfileReadError as exc:
+            self._note_failure("read profile", exc)
             self._profile_error = True
             self._measured = {"at": "", "summary": ""}
             with self._cal_lock:
@@ -335,7 +340,7 @@ class AppController(QObject):
 
     def _start_download(self, name: str, fn, on_ok) -> None:
         self._set_notice(tr("dl_setup", name=name))
-        self._download = _Download(fn)
+        self._download = _Download(fn, f"{name} download")
         self._download.finished_ok.connect(on_ok)
         self._download.finished_err.connect(self._set_notice)
         self._download.start()
@@ -345,6 +350,7 @@ class AppController(QObject):
         try:
             ps3drv.launch_installer(path)
         except ps3drv.Ps3DriverError as exc:
+            self._note_failure("ps3 installer", exc)
             self._set_notice(str(exc))
             return
         self._set_notice(tr("finish_ps3", name=name))
@@ -359,6 +365,7 @@ class AppController(QObject):
         try:
             launch_installer(path)
         except RuntimeError as exc:
+            self._note_failure("vigem installer", exc)
             self._install_both = False
             self._set_notice(str(exc))
             return
@@ -377,6 +384,7 @@ class AppController(QObject):
         try:
             hidhide.launch_installer(path)
         except hidhide.HidHideError as exc:
+            self._note_failure("hidhide installer", exc)
             self._set_notice(str(exc))
             return
         self._set_notice(tr("finish_hidhide"))
@@ -399,19 +407,20 @@ class AppController(QObject):
                 return tr("hide_xinput")
             return tr("hide_ok")
         except hidhide.HidHideError as exc:
+            self._note_failure("hide physical pad", exc)
             return tr("hide_fail", error=exc)
 
     def _unhide_physical(self) -> None:
         for instance in self._hidden_instances:
             try:
                 hidhide.unhide_device(instance)
-            except hidhide.HidHideError:
-                pass
+            except hidhide.HidHideError as exc:
+                self._note_failure("unhide device", exc)
         if self._hidden_instances:
             try:
                 hidhide.cloak(False)
-            except hidhide.HidHideError:
-                pass
+            except hidhide.HidHideError as exc:
+                self._note_failure("hidhide cloak", exc)
         self._hidden_instances = []
 
     def _current_state(self) -> NormalizedState | None:
@@ -563,10 +572,12 @@ class AppController(QObject):
         try:
             self._virtual.start(self._current_state)
         except ViGEmMissingError as exc:
+            self._note_failure("virtual pad", exc)
             self._set_notice(str(exc))
             self._offer_vigem()
             return
         except RuntimeError as exc:
+            self._note_failure("virtual pad", exc)
             self._set_notice(str(exc))
             return
         after = {dev.index for dev in enumerate_xinput() if dev.index is not None}
@@ -679,7 +690,12 @@ class AppController(QObject):
             self._measured.get("at", ""),
             self._measured.get("summary", ""),
         ]
-        target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        try:
+            target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        except OSError as exc:
+            self._note_failure("export calibration", exc)
+            self._set_notice(str(exc))
+            return
         self._set_notice(tr("export_done", name=target.name))
 
     @Slot()
@@ -709,7 +725,8 @@ class AppController(QObject):
             return False
         try:
             self._write_profile()
-        except OSError:
+        except OSError as exc:
+            self._note_failure("save remap", exc)
             return False
         self._remap_error = -1
         return True
@@ -863,7 +880,8 @@ class AppController(QObject):
         previous = self._lang_pref
         try:
             save_language(pref)
-        except OSError:
+        except OSError as exc:
+            self._note_failure("save language", exc)
             self._lang_pref = previous
             self._settings_error = True
             self.languageChanged.emit()
@@ -930,6 +948,7 @@ class AppController(QObject):
         lines = [f"{item['time']}  {item['level']}  {item['text']}" for item in self._log]
         clipboard = QGuiApplication.clipboard()
         if clipboard is None:
+            self._note_failure("copy log", None)
             self._set_notice(tr("log_copy_fail"))
             return
         clipboard.setText("\n".join(lines))
@@ -962,7 +981,8 @@ class AppController(QObject):
             return
         try:
             save_theme(mode)
-        except OSError:
+        except OSError as exc:
+            self._note_failure("save theme", exc)
             self._settings_error = True
             self.languageChanged.emit()
             return
@@ -977,7 +997,8 @@ class AppController(QObject):
             return
         try:
             save_debug(enabled)
-        except OSError:
+        except OSError as exc:
+            self._note_failure("save debug", exc)
             self._settings_error = True
             self.languageChanged.emit()
             return
@@ -993,11 +1014,40 @@ class AppController(QObject):
 
     @Slot()
     def openConfigFolder(self) -> None:
-        from pathlib import Path
+        folder = logs_dir().parent
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            os.startfile(folder)
+        except OSError as exc:
+            self._note_failure("open config folder", exc)
+            self._set_notice(str(exc))
 
-        folder = Path.home() / "AppData" / "Local" / "joystick-doctor"
-        folder.mkdir(parents=True, exist_ok=True)
-        os.startfile(folder)
+    @Slot()
+    def openLogsFolder(self) -> None:
+        try:
+            os.startfile(logs_dir())
+        except OSError as exc:
+            self._note_failure("open log folder", exc)
+            self._set_notice(str(exc))
+
+    def _note_failure(self, context: str, exc: BaseException | None) -> None:
+        write_failure(context, exc)
+
+    def _failure_snapshot(self) -> str:
+        lines = ["devices:"]
+        if not self._devices:
+            lines.append("(none)")
+        for device in self._devices.values():
+            lines.append(
+                f"{device.product_name} backend={device.backend} "
+                f"vid={device.vendor_id:04x} pid={device.product_id:04x}"
+            )
+        lines.append("session log:")
+        if not self._log:
+            lines.append("(empty)")
+        for item in self._log:
+            lines.append(f"{item.get('time', '')} {item.get('level', '')} {item.get('text', '')}")
+        return "\n".join(lines)
 
     def _language_pref(self) -> str:
         return self._lang_pref
@@ -1040,6 +1090,7 @@ class AppController(QObject):
         try:
             hidhide.register_app(sys.executable)
         except hidhide.HidHideError as exc:
+            self._note_failure("whitelist", exc)
             self._set_notice(tr("hide_fail", error=exc))
             return
         self._set_notice(tr("whitelist_ok"))
@@ -1149,7 +1200,8 @@ class AppController(QObject):
             self._cal = draft
         try:
             self._write_profile()
-        except OSError:
+        except OSError as exc:
+            self._note_failure("save curve", exc)
             with self._cal_lock:
                 self._cal = previous
             self._curve_error = "write"

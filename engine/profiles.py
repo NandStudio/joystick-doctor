@@ -5,6 +5,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from engine.pipeline import Calibration, StickCal, TriggerCal
+from engine.supportlog import write_failure
 from engine.remap import BUTTONS, RemapRule
 from engine.state import DeviceIdentity
 
@@ -36,7 +37,8 @@ def save_profile(
     if path.is_file():
         try:
             previous = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError) as exc:
+            write_failure("profile file unreadable before save", exc)
             previous = {}
     payload = {
         "vendor_id": identity.vendor_id,
