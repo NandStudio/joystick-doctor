@@ -178,6 +178,15 @@ Window {
     ConfirmDialog {
         z: 10
     }
+
+    ThanksCard {
+        z: 6
+        anchors.right: parent.right
+        anchors.bottom: statusBar.top
+        anchors.rightMargin: 16
+        anchors.bottomMargin: 16
+        width: Math.min(440, parent.width - sideBar.width - 48)
+    }
     }
 
     Shortcut {
@@ -185,6 +194,8 @@ Window {
         onActivated: {
             if (app.confirmOpen)
                 app.confirmNo()
+            else if (app.thanksOpen)
+                app.thanksLater()
             else if (app.firstRunOpen)
                 app.dismissFirstRun()
             else if (app.remapEditorOpen)

@@ -58,3 +58,13 @@ def save_debug(enabled: bool) -> None:
     data = _read()
     data["debug"] = bool(enabled)
     _write(data)
+
+
+def load_thanks_hidden() -> bool:
+    return bool(_read().get("thanks_hidden", False))
+
+
+def save_thanks_hidden(hidden: bool) -> None:
+    data = _read()
+    data["thanks_hidden"] = bool(hidden)
+    _write(data)
