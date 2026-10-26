@@ -8,12 +8,14 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
+from engine.supportlog import install_hooks
 from ui.assets import bundle_root
 from ui.controller import AppController
 from ui.theme import Palette
 
 
 def main() -> None:
+    install_hooks()
     QQuickStyle.setStyle("Basic")
     app = QGuiApplication(sys.argv)
     engine = QQmlApplicationEngine()

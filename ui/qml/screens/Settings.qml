@@ -175,6 +175,11 @@ Item {
                         text: app.langTick >= 0 ? app.label("open_folder") : ""
                         onClicked: app.openConfigFolder()
                     }
+                    QuietButton {
+                        framed: true
+                        text: app.langTick >= 0 ? app.label("open_logs") : ""
+                        onClicked: app.openLogsFolder()
+                    }
                 }
             }
         }
