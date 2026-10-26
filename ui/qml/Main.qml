@@ -147,6 +147,14 @@ Window {
         visible: app.page === "vibracion"
     }
 
+    About {
+        anchors.left: sideBar.right
+        anchors.right: parent.right
+        anchors.top: titleBar.bottom
+        anchors.bottom: statusBar.top
+        visible: app.page === "acerca"
+    }
+
     StatusBar {
         id: statusBar
         anchors.left: parent.left

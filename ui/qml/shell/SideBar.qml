@@ -181,6 +181,13 @@ Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: nav.modelData.id === "vibracion"
                     }
+                    AboutMark {
+                        width: 16
+                        height: 16
+                        mark: nav.chosen ? theme.onWash : theme.stroke
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: nav.modelData.id === "acerca"
+                    }
                     Text {
                         text: nav.text
                         color: nav.chosen ? theme.onWash : theme.ink

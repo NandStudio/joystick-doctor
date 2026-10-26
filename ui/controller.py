@@ -8,6 +8,7 @@ from copy import deepcopy
 from datetime import datetime
 
 from PySide6.QtCore import Property, QObject, QThread, QTimer, QUrl, Signal, Slot
+from PySide6.QtGui import QDesktopServices
 
 from engine import hidhide, ps3drv
 from engine.device.catalog import device_key, enumerate_all, hide_paths_for
@@ -18,6 +19,7 @@ from engine.guided import GuidedSession
 from engine.pipeline import Calibration, StickCal, apply_calibration, apply_stick
 from engine.prefs import load_debug, load_language, load_theme, save_debug, save_language, save_theme
 from engine.supportlog import logs_dir, set_snapshot, write_failure
+from engine.version import APP_VERSION
 from engine.profiles import ProfileReadError, load_profile, profile_key, profile_path, save_profile
 from engine.remap import BUTTONS, RemapConfig, RemapEngine, RemapRule
 from engine.state import DeviceIdentity, NormalizedState
@@ -178,6 +180,7 @@ class AppController(QObject):
         if self._debug:
             items.append({"id": "registro", "label": tr("nav_registro")})
         items.append({"id": "ajustes", "label": tr("nav_ajustes")})
+        items.append({"id": "acerca", "label": tr("nav_acerca")})
         return items
 
     def _device_rows(self) -> list[dict[str, object]]:
@@ -1034,6 +1037,23 @@ class AppController(QObject):
             self._note_failure("open log folder", exc)
             self._set_notice(str(exc))
 
+    @Slot(str)
+    def openLink(self, key: str) -> None:
+        self._open_link(key)
+
+    def _open_link(self, key: str) -> None:
+        urls = {
+            "cafecito": "https://cafecito.app/lucma",
+            "vigem": "https://github.com/nefarius/ViGEmBus",
+            "hidhide": "https://github.com/nefarius/HidHide",
+            "gpl": "https://www.gnu.org/licenses/gpl-3.0.html",
+            "github": "https://github.com/NandStudio/joystick-doctor",
+        }
+        url = urls.get(key)
+        if not url:
+            return
+        QDesktopServices.openUrl(QUrl(url))
+
     def _note_failure(self, context: str, exc: BaseException | None) -> None:
         write_failure(context, exc)
 
@@ -1448,6 +1468,9 @@ class AppController(QObject):
     def _vigem_word(self) -> str:
         return self._vigem_word
 
+    def _app_version(self) -> str:
+        return APP_VERSION
+
     def _hid_word_value(self) -> str:
         return self._hid_word
 
@@ -1514,6 +1537,7 @@ class AppController(QObject):
     ltText = Property(str, _lt_text, notify=frame)
     rtText = Property(str, _rt_text, notify=frame)
     vigemWord = Property(str, _vigem_word, notify=chromeChanged)
+    appVersion = Property(str, _app_version, constant=True)
     hidHideWord = Property(str, _hid_word_value, notify=chromeChanged)
     pollStatus = Property(str, _poll_status, notify=frame)
     profileWord = Property(str, _profile_word, notify=chromeChanged)
