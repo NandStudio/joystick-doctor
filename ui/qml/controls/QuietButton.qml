@@ -9,10 +9,10 @@ Button {
     font.family: app.bodyFamily
     font.pixelSize: 14
     font.weight: chosen ? 600 : 400
-    implicitHeight: 36
+    implicitHeight: 44
     leftPadding: 14
     rightPadding: 14
-    topPadding: 4
+    topPadding: 8
     bottomPadding: 8
     spacing: 0
 
