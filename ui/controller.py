@@ -19,6 +19,10 @@ from engine.guided import GuidedSession
 from engine.pipeline import Calibration, StickCal, apply_calibration, apply_stick
 from engine.prefs import load_debug, load_language, load_theme, load_thanks_hidden, save_debug, save_language, save_theme, save_thanks_hidden
 from engine.supportlog import logs_dir, set_snapshot, write_failure
+from engine.update import Release
+from engine.update import download_installer as download_app_update
+from engine.update import fetch_latest
+from engine.update import launch_installer as launch_app_update
 from engine.version import APP_VERSION
 from engine.profiles import ProfileReadError, load_profile, profile_key, profile_path, save_profile
 from engine.remap import BUTTONS, RemapConfig, RemapEngine, RemapRule
@@ -125,6 +129,12 @@ class AppController(QObject):
         self._virtual_started = 0.0
         self._install_both = False
         self._log: list[dict[str, str]] = []
+        self._update_status = ""
+        self._update_version = ""
+        self._update_error = ""
+        self._update_manual = False
+        self._update_job: _Download | None = None
+        self._pending_release: Release | None = None
         self._rules: list[RemapRule] = []
         self._remap = RemapEngine()
         self._remap_lock = threading.Lock()
@@ -170,6 +180,7 @@ class AppController(QObject):
         self._driver_timer.setInterval(2000)
         self._driver_timer.timeout.connect(self._refresh_drivers)
         self._driver_timer.start()
+        QTimer.singleShot(800, lambda: self._check_updates(False))
 
     def _destinations(self) -> list[dict[str, str]]:
         items = [
@@ -228,6 +239,7 @@ class AppController(QObject):
         self._vigem_word = vigem
         self._hid_word = hide
         self._emit_chrome()
+        self._offer_update()
         self._flush_thanks()
 
     def _log_event(self, level: str, text: str) -> None:
@@ -1134,6 +1146,81 @@ class AppController(QObject):
             lines.append(f"{item.get('time', '')} {item.get('level', '')} {item.get('text', '')}")
         return "\n".join(lines)
 
+    def _check_updates(self, manual: bool) -> None:
+        if manual:
+            self._update_manual = True
+        if self._update_job is not None and self._update_job.isRunning():
+            return
+        self._update_manual = manual
+        self._update_status = "checking"
+        self._update_error = ""
+        self._emit_chrome()
+        self._update_job = _Download(fetch_latest, "update check")
+        self._update_job.finished_ok.connect(self._on_update_ok)
+        self._update_job.finished_err.connect(self._on_update_err)
+        self._update_job.start()
+
+    @Slot()
+    def checkForUpdates(self) -> None:
+        self._check_updates(True)
+
+    def _on_update_ok(self, release: object) -> None:
+        if not isinstance(release, Release):
+            self._pending_release = None
+            self._update_version = ""
+            self._update_status = "current" if self._update_manual else ""
+            self._emit_chrome()
+            return
+        self._pending_release = release
+        self._update_status = "available"
+        self._update_version = release.version
+        self._emit_chrome()
+        self._offer_update()
+
+    def _on_update_err(self, text: str) -> None:
+        loud = self._update_manual or self._update_status == "downloading"
+        self._update_status = "error"
+        self._update_error = text
+        if loud:
+            self._set_notice(tr("update_fail", error=text))
+            return
+        self._emit_chrome()
+
+    def _offer_update(self) -> None:
+        release = self._pending_release
+        if release is None:
+            return
+        if self._first_run_open() and not self._update_manual:
+            return
+        self._pending_release = None
+        self._ask(
+            tr("update_title"),
+            tr("update_body", version=release.version),
+            lambda release=release: self._start_update_download(release),
+        )
+
+    def _start_update_download(self, release: Release) -> None:
+        self._update_status = "downloading"
+        self._update_version = release.version
+        self._set_notice(tr("update_downloading", version=release.version))
+        job = _Download(lambda release=release: download_app_update(release), "update download")
+        self._update_job = job
+        job.finished_ok.connect(self._run_update)
+        job.finished_err.connect(self._on_update_err)
+        job.start()
+
+    def _run_update(self, path) -> None:
+        try:
+            launch_app_update(path)
+        except Exception as exc:
+            self._note_failure("update installer", exc)
+            self._update_status = "error"
+            self._update_error = str(exc)
+            self._set_notice(str(exc))
+            return
+        self._update_status = "launched"
+        self._set_notice(tr("update_launched"))
+
     def _language_pref(self) -> str:
         return self._lang_pref
 
@@ -1146,6 +1233,7 @@ class AppController(QObject):
     def dismissFirstRun(self) -> None:
         self._first_run_dismissed = True
         self._emit_chrome()
+        self._offer_update()
         self._flush_thanks()
 
     @Slot()
@@ -1533,6 +1621,25 @@ class AppController(QObject):
     def _app_version(self) -> str:
         return APP_VERSION
 
+    def _update_status_value(self) -> str:
+        return self._update_status
+
+    def _update_detail_value(self) -> str:
+        status = self._update_status
+        if status == "checking":
+            return tr("checking_updates")
+        if status == "current":
+            return tr("up_to_date", version=APP_VERSION)
+        if status == "available":
+            return tr("update_found", version=self._update_version)
+        if status == "downloading":
+            return tr("update_downloading", version=self._update_version)
+        if status == "launched":
+            return tr("update_launched")
+        if status == "error":
+            return tr("update_fail", error=self._update_error)
+        return ""
+
     def _hid_word_value(self) -> str:
         return self._hid_word
 
@@ -1600,6 +1707,8 @@ class AppController(QObject):
     rtText = Property(str, _rt_text, notify=frame)
     vigemWord = Property(str, _vigem_word, notify=chromeChanged)
     appVersion = Property(str, _app_version, constant=True)
+    updateStatus = Property(str, _update_status_value, notify=chromeChanged)
+    updateDetail = Property(str, _update_detail_value, notify=chromeChanged)
     hidHideWord = Property(str, _hid_word_value, notify=chromeChanged)
     pollStatus = Property(str, _poll_status, notify=frame)
     profileWord = Property(str, _profile_word, notify=chromeChanged)

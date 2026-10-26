@@ -177,6 +177,45 @@ Item {
                 }
             }
         }
+
+        Rectangle {
+            radius: theme.radiusCard
+            color: theme.surface
+            border.width: theme.edge
+            border.color: theme.stroke
+            Layout.fillWidth: true
+            implicitHeight: updateCol.implicitHeight + 36
+            ColumnLayout {
+                id: updateCol
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: 18
+                spacing: 8
+                Text {
+                    text: (app.langTick >= 0 ? app.label("version_label") : "") + "  " + app.appVersion
+                    color: theme.ink
+                    font.family: app.displayFamily
+                    font.pixelSize: 17
+                }
+                Text {
+                    visible: app.updateDetail.length > 0
+                    text: app.langTick >= 0 ? app.updateDetail : ""
+                    color: theme.ink
+                    font.family: app.bodyFamily
+                    font.pixelSize: 13
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+                QuietButton {
+                    framed: true
+                    enabled: app.updateStatus !== "checking" && app.updateStatus !== "downloading"
+                    opacity: enabled ? 1 : 0.5
+                    text: app.langTick >= 0 ? app.label("check_updates") : ""
+                    onClicked: app.checkForUpdates()
+                }
+            }
+        }
         Item { Layout.fillHeight: true }
     }
 }
