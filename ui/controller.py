@@ -1037,6 +1037,10 @@ class AppController(QObject):
             self._note_failure("open log folder", exc)
             self._set_notice(str(exc))
 
+    @Slot()
+    def openDonate(self) -> None:
+        self._open_link("cafecito")
+
     @Slot(str)
     def openLink(self, key: str) -> None:
         self._open_link(key)

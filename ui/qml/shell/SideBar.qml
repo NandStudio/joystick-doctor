@@ -201,6 +201,43 @@ Rectangle {
             }
         }
 
-        Item { Layout.fillHeight: true }
+        Item { Layout.preferredHeight: 8 }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.leftMargin: 8
+            Layout.rightMargin: 8
+            Layout.preferredHeight: 1
+            color: theme.stroke
+        }
+
+        Item { Layout.preferredHeight: 8 }
+
+        QuietButton {
+            id: support
+            Layout.fillWidth: true
+            text: app.langTick >= 0 ? app.label("donate") : ""
+            onClicked: app.openDonate()
+            contentItem: Item {
+                Row {
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    spacing: 8
+                    HeartMark {
+                        width: 16
+                        height: 16
+                        mark: theme.stroke
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    Text {
+                        text: support.text
+                        color: theme.ink
+                        font.family: app.bodyFamily
+                        font.pixelSize: 13
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+            }
+        }
     }
 }
