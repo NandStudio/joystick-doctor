@@ -68,6 +68,7 @@ Item {
                 RowLayout {
                     spacing: 8
                     InkButton {
+                        visible: app.vigemWord !== (app.langTick >= 0 ? app.label("word_absent") : "")
                         text: app.virtualLabel
                         onClicked: app.toggleVirtual()
                     }
@@ -119,11 +120,13 @@ Item {
                 RowLayout {
                     spacing: 8
                     QuietButton {
+                        visible: app.hidHideWord !== (app.langTick >= 0 ? app.label("word_absent") : "")
                         framed: true
                         text: app.langTick >= 0 ? app.label("whitelist") : ""
                         onClicked: app.addWhitelist()
                     }
                     QuietButton {
+                        visible: app.hidHideWord !== (app.langTick >= 0 ? app.label("word_absent") : "")
                         framed: true
                         text: app.langTick >= 0 ? app.label("reconnect") : ""
                         onClicked: app.reconnectDevices()
