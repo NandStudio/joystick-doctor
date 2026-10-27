@@ -3,7 +3,7 @@
 ; or .\packaging\build.ps1
 
 #define MyAppName "Joystick Doctor"
-#define MyAppVersion "0.2.2"
+#define MyAppVersion "0.2.3"
 #define MyAppPublisher "Nand Studio by Lucma"
 #define MyAppURL "https://www.nandstudio.dev/"
 #define MyAppExeName "JoystickDoctor.exe"
