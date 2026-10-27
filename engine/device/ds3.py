@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 
 import hid
 
@@ -195,6 +196,57 @@ def parse_clone_hid(data: bytes) -> NormalizedState:
     return state
 
 
+_PAD_FIELDS = (
+    "lx",
+    "ly",
+    "rx",
+    "ry",
+    "lt",
+    "rt",
+    "a",
+    "b",
+    "x",
+    "y",
+    "lb",
+    "rb",
+    "ls",
+    "rs",
+    "back",
+    "start",
+    "guide",
+    "dpad_up",
+    "dpad_down",
+    "dpad_left",
+    "dpad_right",
+)
+
+
+def _same_pad(left: NormalizedState, right: NormalizedState) -> bool:
+    return all(getattr(left, name) == getattr(right, name) for name in _PAD_FIELDS)
+
+
+def _ps1_report_id(data: bytes) -> int:
+    if data and data[0] in (0x01, 0x02):
+        return data[0]
+    return 0x01
+
+
+def track_ps1_port(
+    ports: dict[int, NormalizedState],
+    active: int,
+    data: bytes,
+) -> tuple[int, NormalizedState]:
+    """Keep each report id. An unchanged port must not replace the one in use."""
+    report_id = _ps1_report_id(data)
+    state = parse_ps1_usb(data)
+    previous = ports.get(report_id)
+    ports[report_id] = state
+    if previous is not None and not _same_pad(previous, state):
+        active = report_id
+    shown = ports.get(active, state)
+    return active, replace(shown, timestamp=time.perf_counter())
+
+
 def parse_report(data: bytes) -> NormalizedState:
     if _looks_native(data):
         return parse_native(data)
@@ -210,6 +262,11 @@ def enable_reports(reader: HidPathReader) -> None:
 
 
 class Ds3Reader(HidPathReader):
+    def __init__(self, identity: DeviceIdentity):
+        super().__init__(identity)
+        self._ps1_ports: dict[int, NormalizedState] = {}
+        self._ps1_active = 0x01
+
     def open(self) -> None:
         super().open()
         if self.identity.vendor_id == VID and self.identity.product_id in PIDS:
@@ -220,7 +277,10 @@ class Ds3Reader(HidPathReader):
         if data is None:
             return None
         if is_ps1_usb(self.identity.vendor_id, self.identity.product_id):
-            return parse_ps1_usb(data)
+            self._ps1_active, shown = track_ps1_port(
+                self._ps1_ports, self._ps1_active, data
+            )
+            return shown
         return parse_report(data)
 
 
