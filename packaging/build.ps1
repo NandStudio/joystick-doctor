@@ -44,5 +44,5 @@ if ($LASTEXITCODE -ne 0) {
     throw "ISCC failed with exit $LASTEXITCODE"
 }
 
-Write-Host "Installer: $root\dist\JoystickDoctorSetup-0.2.2.exe"
+Write-Host "Installer: $root\dist\JoystickDoctorSetup-0.2.3.exe"
 Write-Host "The setup copies the app only. ViGEmBus / HidHide / DsHidMini still install from inside the app."
