@@ -10,6 +10,7 @@ from engine.device.hid_util import (
     HidPathReader,
     apply_hat,
     apply_sticks_u8,
+    axis_u8,
     print_loop,
     trigger_u8,
 )
@@ -18,8 +19,10 @@ from engine.state import DeviceIdentity, NormalizedState
 VID = 0x054C
 PIDS = {0x0268, 0x042F}
 # Cheap USB pads sold as "PS3": hat + Sony face order, not the Sony report.
+# 0810:0001 is the adapter Steam calls a PS1 controller; parse_ps1_usb reads it.
+PS1_USB_ID = (0x0810, 0x0001)
 CLONE_IDS = {
-    (0x0810, 0x0001),
+    PS1_USB_ID,
     (0x2563, 0x0575),
     (0x2563, 0x0523),
     (0x20D6, 0xCA6D),
@@ -123,6 +126,48 @@ def parse_native(data: bytes) -> NormalizedState:
     return state
 
 
+def is_ps1_usb(vendor_id: int, product_id: int) -> bool:
+    return (vendor_id, product_id) == PS1_USB_ID
+
+
+def _ps1_payload(data: bytes) -> bytes:
+    # Windows leaves report id 0x01 or 0x02 on an 8-byte read. That byte is not an axis.
+    if data and data[0] in (0x01, 0x02):
+        return data[1:]
+    return data
+
+
+def parse_ps1_usb(data: bytes) -> NormalizedState:
+    payload = _ps1_payload(data)
+    state = NormalizedState()
+    if len(payload) < 5:
+        state.timestamp = time.perf_counter()
+        return state
+    state.lx = axis_u8(payload[0])
+    state.ly = -axis_u8(payload[1])
+    state.ry = -axis_u8(payload[2])
+    state.rx = axis_u8(payload[3])
+    apply_hat(state, payload[4])
+    bits = payload[5] if len(payload) > 5 else 0
+    if len(payload) > 6:
+        bits |= payload[6] << 8
+    # SDL map for this PID: △ ○ × □ L2 R2 L1 R1 Select Start L3 R3.
+    state.y = bool(bits & 0x01)
+    state.b = bool(bits & 0x02)
+    state.a = bool(bits & 0x04)
+    state.x = bool(bits & 0x08)
+    state.lt = 1.0 if bits & 0x10 else 0.0
+    state.rt = 1.0 if bits & 0x20 else 0.0
+    state.lb = bool(bits & 0x40)
+    state.rb = bool(bits & 0x80)
+    state.back = bool(bits & 0x100)
+    state.start = bool(bits & 0x200)
+    state.ls = bool(bits & 0x400)
+    state.rs = bool(bits & 0x800)
+    state.timestamp = time.perf_counter()
+    return state
+
+
 def parse_clone_hid(data: bytes) -> NormalizedState:
     payload = data[1:] if data and data[0] == 0x01 and len(data) > 8 else data
     state = NormalizedState()
@@ -174,6 +219,8 @@ class Ds3Reader(HidPathReader):
         data = self.read_raw()
         if data is None:
             return None
+        if is_ps1_usb(self.identity.vendor_id, self.identity.product_id):
+            return parse_ps1_usb(data)
         return parse_report(data)
 
 

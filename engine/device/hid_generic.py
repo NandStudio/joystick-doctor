@@ -6,6 +6,8 @@ import hid
 
 from engine.device.ds3 import CLONE_IDS as _DS3_CLONES
 from engine.device.ds3 import PIDS as _DS3_PIDS
+from engine.device.ds3 import PS1_USB_ID as _PS1_USB_ID
+from engine.device.ds3 import parse_ps1_usb
 from engine.device.ds3 import parse_report as parse_ds3
 from engine.device.ds4 import parse_report as parse_ds4
 from engine.device.ds5 import parse_report as parse_ds5
@@ -230,6 +232,8 @@ def parse_report(data: bytes, identity: DeviceIdentity | None = None) -> Normali
         return _parse_x360(data)
     vid = identity.vendor_id if identity else 0
     pid = identity.product_id if identity else 0
+    if (vid, pid) == _PS1_USB_ID:
+        return parse_ps1_usb(data)
     if vid == _LOGITECH_VID and pid in _LOGITECH_DINPUT:
         return _parse_logitech_dinput(data)
     if vid == _LOGITECH_VID and pid == _F310_PID:
