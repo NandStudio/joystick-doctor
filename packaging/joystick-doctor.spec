@@ -8,7 +8,7 @@ ROOT = Path(SPECPATH).resolve().parent
 datas: list = []
 binaries: list = []
 hiddenimports: list = []
-for package in ("PySide6", "shiboken6", "hid", "vgamepad"):
+for package in ("PySide6", "shiboken6", "hid", "vgamepad", "truststore", "certifi"):
     extra_datas, extra_binaries, extra_hidden = collect_all(package)
     datas += extra_datas
     binaries += extra_binaries
@@ -27,6 +27,7 @@ hiddenimports += [
     "engine.device.switch_pro",
     "engine.device.xinput",
     "engine.device.hid_generic",
+    "engine.net",
     "engine.ps3drv",
     "engine.vigem",
     "engine.hidhide",
