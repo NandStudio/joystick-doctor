@@ -363,8 +363,11 @@ class AppController(QObject):
         self._set_notice(tr("dl_setup", name=name))
         self._download = _Download(fn, f"{name} download")
         self._download.finished_ok.connect(on_ok)
-        self._download.finished_err.connect(self._set_notice)
+        self._download.finished_err.connect(self._on_driver_download_err)
         self._download.start()
+
+    def _on_driver_download_err(self, _text: str) -> None:
+        self._set_notice(tr("driver_download_fail"))
 
     def _run_ps3(self, path) -> None:
         name = ps3drv.package_name()

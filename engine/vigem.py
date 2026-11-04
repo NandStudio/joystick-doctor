@@ -6,6 +6,8 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
+from engine.net import urlopen
+
 _DRIVER = Path(r"C:\Windows\System32\drivers\ViGEmBus.sys")
 _RELEASES = "https://api.github.com/repos/nefarius/ViGEmBus/releases/latest"
 _UA = "joystick-doctor"
@@ -21,7 +23,7 @@ def is_installed() -> bool:
 
 def latest_installer_url() -> str:
     request = urllib.request.Request(_RELEASES, headers={"User-Agent": _UA})
-    with urllib.request.urlopen(request, timeout=30) as response:
+    with urlopen(request, timeout=30) as response:
         payload = json.loads(response.read().decode("utf-8"))
     for asset in payload.get("assets", []):
         name = asset.get("name") or ""
@@ -34,7 +36,7 @@ def latest_installer_url() -> str:
 def download_installer() -> Path:
     url = latest_installer_url()
     request = urllib.request.Request(url, headers={"User-Agent": _UA})
-    with urllib.request.urlopen(request, timeout=120) as response:
+    with urlopen(request, timeout=120) as response:
         data = response.read()
     path = Path(tempfile.gettempdir()) / "ViGEmBus_setup.exe"
     path.write_bytes(data)

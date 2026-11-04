@@ -8,6 +8,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+from engine.net import urlopen
 from engine.version import APP_VERSION
 
 _RELEASES = "https://api.github.com/repos/NandStudio/joystick-doctor/releases/latest"
@@ -55,7 +56,7 @@ def fetch_latest() -> Release | str:
         headers={"User-Agent": _UA, "Accept": "application/vnd.github+json"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urlopen(request, timeout=30) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         raise UpdateError(f"GitHub returned {exc.code}.") from exc
@@ -89,7 +90,7 @@ def fetch_latest() -> Release | str:
 def download_installer(release: Release) -> Path:
     request = urllib.request.Request(release.asset_url, headers={"User-Agent": _UA})
     try:
-        with urllib.request.urlopen(request, timeout=180) as response:
+        with urlopen(request, timeout=180) as response:
             data = response.read()
     except OSError as exc:
         raise UpdateError(str(exc)) from exc
