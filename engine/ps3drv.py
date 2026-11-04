@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 from engine.device.ds3 import PIDS as DS3_PIDS
 from engine.device.ds3 import VID as DS3_VID
+from engine.net import urlopen
 from engine.state import DeviceIdentity
 
 _UA = "joystick-doctor"
@@ -97,7 +98,7 @@ def needs_helper(device: DeviceIdentity) -> bool:
 
 def _github_json(url: str) -> dict | list:
     request = urllib.request.Request(url, headers={"User-Agent": _UA})
-    with urllib.request.urlopen(request, timeout=30) as response:
+    with urlopen(request, timeout=30) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -137,7 +138,7 @@ def latest_installer_url() -> str:
 def download_installer() -> Path:
     url = latest_installer_url()
     request = urllib.request.Request(url, headers={"User-Agent": _UA})
-    with urllib.request.urlopen(request, timeout=180) as response:
+    with urlopen(request, timeout=180) as response:
         data = response.read()
     name = Path(urlparse(url).path).name or f"{package_name()}_setup.exe"
     path = Path(tempfile.gettempdir()) / name
