@@ -11,7 +11,7 @@ App de escritorio para Windows: diagnosticar y calibrar un mando, aplicar deadzo
 
 La app puede descargar e iniciar los instaladores oficiales de Nefarius si faltan (ViGEmBus, HidHide). Si detecta un DualShock 3 oficial y no hay driver, ofrece **DsHidMini** en Windows 10/11 o **ScpToolkit** en Windows 7/8 (setup archivado de Nefarius). XInput se lee con `xinput1_4.dll`; no hace falta paquete extra.
 
-Dependencias: `hidapi`, `vgamepad`, `PySide6`.
+Dependencias: `hidapi`, `vgamepad`, `PySide6`, `truststore`, `certifi`.
 
 
 ## Mandos
