@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 
 import hid
 
@@ -126,6 +127,341 @@ class HidPathReader:
 
     def __exit__(self, *exc: object) -> None:
         self.close()
+
+
+@dataclass(frozen=True, slots=True)
+class HidField:
+    report_id: int
+    page: int
+    usage: int
+    bit_offset: int
+    size: int
+    logical_min: int
+    logical_max: int
+    null_state: bool
+
+
+@dataclass(frozen=True, slots=True)
+class HidLayout:
+    fields: tuple[HidField, ...]
+    numbered: bool
+
+
+_PAGE_DESKTOP = 0x01
+_PAGE_SIM = 0x02
+_PAGE_BUTTON = 0x09
+_USE_X = 0x30
+_USE_Y = 0x31
+_USE_Z = 0x32
+_USE_RX = 0x33
+_USE_RY = 0x34
+_USE_RZ = 0x35
+_USE_HAT = 0x39
+_USE_ACCEL = 0xC4
+_USE_BRAKE = 0xC5
+_BUTTON_NAMES = (
+    "a",
+    "b",
+    "x",
+    "y",
+    "lb",
+    "rb",
+    "back",
+    "start",
+    "ls",
+    "rs",
+    "guide",
+)
+
+
+def _item_unsigned(data: bytes) -> int:
+    if not data:
+        return 0
+    return int.from_bytes(data, "little", signed=False)
+
+
+def _item_signed(data: bytes) -> int:
+    if not data:
+        return 0
+    bits = len(data) * 8
+    value = _item_unsigned(data)
+    if value & (1 << (bits - 1)):
+        value -= 1 << bits
+    return value
+
+
+def _logical_range(raw_min: bytes, raw_max: bytes) -> tuple[int, int]:
+    low = _item_signed(raw_min)
+    high = _item_signed(raw_max)
+    if high < low:
+        high = _item_unsigned(raw_max)
+    return low, high
+
+
+def layout_from_descriptor(desc: bytes) -> HidLayout | None:
+    """Map input fields from a HID report descriptor. Returns None when it has none."""
+    page = 0
+    size = 0
+    count = 0
+    raw_min = b"\x00"
+    raw_max = b"\x00"
+    report_id = 0
+    numbered = False
+    bit_offset = 0
+    usages: list[tuple[int, int]] = []
+    usage_min: int | None = None
+    usage_max: int | None = None
+    stack: list[tuple] = []
+    fields: list[HidField] = []
+    index = 0
+    while index < len(desc):
+        prefix = desc[index]
+        index += 1
+        if prefix == 0xFE:
+            if index + 2 > len(desc):
+                break
+            long_size = desc[index]
+            index += 2 + long_size
+            continue
+        data_size = prefix & 0x03
+        if data_size == 3:
+            data_size = 4
+        kind = (prefix >> 2) & 0x03
+        tag = (prefix >> 4) & 0x0F
+        data = desc[index : index + data_size]
+        index += data_size
+        if kind == 1:
+            if tag == 0x0:
+                page = _item_unsigned(data)
+            elif tag == 0x1:
+                raw_min = data or b"\x00"
+            elif tag == 0x2:
+                raw_max = data or b"\x00"
+            elif tag == 0x7:
+                size = _item_unsigned(data)
+            elif tag == 0x8:
+                report_id = _item_unsigned(data)
+                numbered = True
+                bit_offset = 0
+            elif tag == 0x9:
+                count = _item_unsigned(data)
+            elif tag == 0xA:
+                stack.append((page, size, count, raw_min, raw_max, report_id, bit_offset))
+            elif tag == 0xB and stack:
+                page, size, count, raw_min, raw_max, report_id, bit_offset = stack.pop()
+            continue
+        if kind == 2:
+            usage = _item_unsigned(data)
+            if tag == 0x0:
+                usages.append((page, usage))
+            elif tag == 0x1:
+                usage_min = usage
+            elif tag == 0x2:
+                usage_max = usage
+            continue
+        if kind != 0:
+            continue
+        if tag == 0x8:
+            flags = _item_unsigned(data)
+            low, high = _logical_range(raw_min, raw_max)
+            chosen = _expand_usages(page, usages, usage_min, usage_max, count)
+            constant = bool(flags & 0x01)
+            variable = bool(flags & 0x02)
+            null_state = bool(flags & 0x40)
+            if not constant and variable and size and count:
+                for slot in range(count):
+                    field_page, field_usage = chosen[min(slot, len(chosen) - 1)]
+                    fields.append(
+                        HidField(
+                            report_id,
+                            field_page,
+                            field_usage,
+                            bit_offset,
+                            size,
+                            low,
+                            high,
+                            null_state,
+                        )
+                    )
+                    bit_offset += size
+            else:
+                bit_offset += size * count
+        usages = []
+        usage_min = None
+        usage_max = None
+    if not fields:
+        return None
+    return HidLayout(tuple(fields), numbered)
+
+
+def _expand_usages(
+    page: int,
+    usages: list[tuple[int, int]],
+    usage_min: int | None,
+    usage_max: int | None,
+    count: int,
+) -> list[tuple[int, int]]:
+    if usage_min is not None and usage_max is not None and usage_max >= usage_min:
+        seq = [(page, usage) for usage in range(usage_min, usage_max + 1)]
+    else:
+        seq = list(usages)
+    if not seq:
+        seq = [(page, 0)]
+    if count > len(seq):
+        seq = seq + [seq[-1]] * (count - len(seq))
+    return seq
+
+
+def _read_bits(data: bytes, start: int, size: int) -> int | None:
+    if size <= 0 or start < 0 or start + size > len(data) * 8:
+        return None
+    value = 0
+    for bit in range(size):
+        cursor = start + bit
+        if data[cursor // 8] & (1 << (cursor % 8)):
+            value |= 1 << bit
+    return value
+
+
+def _axis_from_field(value: int, field: HidField) -> float:
+    low = field.logical_min
+    high = field.logical_max
+    if high <= low:
+        return 0.0
+    if low < 0:
+        span = max(abs(low), abs(high)) or 1
+        return max(-1.0, min(1.0, value / span))
+    half = (high - low) / 2.0
+    if half == 0:
+        return 0.0
+    mid = (low + high) / 2.0
+    return max(-1.0, min(1.0, (value - mid) / half))
+
+
+def _trigger_from_field(value: int, field: HidField) -> float:
+    low = field.logical_min
+    high = field.logical_max
+    if high <= low:
+        return 0.0
+    return max(0.0, min(1.0, (value - low) / (high - low)))
+
+
+def _hat_from_field(value: int, field: HidField) -> int | None:
+    if field.null_state and (value < field.logical_min or value > field.logical_max):
+        return None
+    if value < field.logical_min or value > field.logical_max:
+        return None
+    index = value - field.logical_min
+    if index > 7:
+        return None
+    return index
+
+
+def parse_hid_layout(
+    data: bytes,
+    layout: HidLayout,
+    previous: NormalizedState | None = None,
+) -> NormalizedState | None:
+    """Read one report. Bits that do not fit keep the previous sticks and buttons."""
+    if not data or layout is None:
+        return None
+    report_id = data[0] if layout.numbered else 0
+    origin = 8 if layout.numbered else 0
+    matching = [field for field in layout.fields if field.report_id == report_id]
+    if not matching:
+        return None
+    state = NormalizedState() if previous is None else NormalizedState(
+        lx=previous.lx,
+        ly=previous.ly,
+        rx=previous.rx,
+        ry=previous.ry,
+        lt=previous.lt,
+        rt=previous.rt,
+        a=previous.a,
+        b=previous.b,
+        x=previous.x,
+        y=previous.y,
+        lb=previous.lb,
+        rb=previous.rb,
+        ls=previous.ls,
+        rs=previous.rs,
+        back=previous.back,
+        start=previous.start,
+        guide=previous.guide,
+        dpad_up=previous.dpad_up,
+        dpad_down=previous.dpad_down,
+        dpad_left=previous.dpad_left,
+        dpad_right=previous.dpad_right,
+    )
+    present: dict[tuple[int, int], tuple[int, HidField]] = {}
+    complete = True
+    for field in matching:
+        raw = _read_bits(data, origin + field.bit_offset, field.size)
+        if raw is None:
+            complete = False
+            continue
+        present[(field.page, field.usage)] = (raw, field)
+    if not present:
+        return None
+    # A short trigger packet must not replace sticks or buttons with zeros.
+
+    def take(page: int, usage: int) -> tuple[int, HidField] | None:
+        return present.get((page, usage))
+
+    left_x = take(_PAGE_DESKTOP, _USE_X) if complete else None
+    left_y = take(_PAGE_DESKTOP, _USE_Y) if complete else None
+    if left_x is not None:
+        state.lx = _axis_from_field(left_x[0], left_x[1])
+    if left_y is not None:
+        state.ly = -_axis_from_field(left_y[0], left_y[1])
+    right_x = take(_PAGE_DESKTOP, _USE_RX) if complete else None
+    right_y = take(_PAGE_DESKTOP, _USE_RY) if complete else None
+    axis_z = take(_PAGE_DESKTOP, _USE_Z)
+    axis_rz = take(_PAGE_DESKTOP, _USE_RZ)
+    if right_x is not None and right_y is not None:
+        state.rx = _axis_from_field(right_x[0], right_x[1])
+        state.ry = -_axis_from_field(right_y[0], right_y[1])
+    elif (
+        complete
+        and right_x is None
+        and right_y is None
+        and axis_z is not None
+        and axis_rz is not None
+    ):
+        state.rx = _axis_from_field(axis_z[0], axis_z[1])
+        state.ry = -_axis_from_field(axis_rz[0], axis_rz[1])
+        axis_z = None
+        axis_rz = None
+    accel = take(_PAGE_SIM, _USE_ACCEL)
+    brake = take(_PAGE_SIM, _USE_BRAKE)
+    if accel is not None or brake is not None:
+        if brake is not None:
+            state.lt = _trigger_from_field(brake[0], brake[1])
+        if accel is not None:
+            state.rt = _trigger_from_field(accel[0], accel[1])
+    else:
+        if axis_z is not None:
+            state.lt = _trigger_from_field(axis_z[0], axis_z[1])
+        if axis_rz is not None:
+            state.rt = _trigger_from_field(axis_rz[0], axis_rz[1])
+    hat = take(_PAGE_DESKTOP, _USE_HAT) if complete else None
+    if hat is not None:
+        index = _hat_from_field(hat[0], hat[1])
+        if index is None:
+            state.dpad_up = state.dpad_down = state.dpad_left = state.dpad_right = False
+        else:
+            apply_hat(state, index)
+    button_fields = [field for field in matching if field.page == _PAGE_BUTTON] if complete else []
+    button_fields.sort(key=lambda field: field.usage)
+    for slot, field in enumerate(button_fields):
+        if slot >= len(_BUTTON_NAMES):
+            break
+        found = present.get((field.page, field.usage))
+        if found is None:
+            continue
+        setattr(state, _BUTTON_NAMES[slot], bool(found[0]))
+    state.timestamp = time.perf_counter()
+    return state
 
 
 def print_loop(devices: list[DeviceIdentity], open_reader, parse) -> None:
