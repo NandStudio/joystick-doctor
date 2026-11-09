@@ -320,6 +320,32 @@ def _parent_ids(instance: str) -> list[str]:
     return found
 
 
+def connected_sony_instances() -> list[str]:
+    """Devnodes of a connected official PS3, including the DsHidMini parent."""
+    found: list[str] = []
+    seen: set[str] = set()
+    try:
+        listed = hid.enumerate()
+    except OSError:
+        return found
+    for info in listed:
+        path = info.get("path") or b""
+        nodes = [_hid_instance(path)]
+        try:
+            nodes.extend(_parent_ids(nodes[0]))
+        except OSError:
+            pass
+        for inst in nodes:
+            upper = inst.upper()
+            if upper in seen:
+                continue
+            if not any(mark in upper for mark in _SONY_MARK.values()):
+                continue
+            seen.add(upper)
+            found.append(inst)
+    return found
+
+
 def disguised_sony_pid(device: DeviceIdentity) -> int | None:
     """DsHidMini XInput mode publishes the DS3 as an Xbox One (045E:02FF)."""
     if (device.vendor_id, device.product_id) != _XBOX_ONE_ID:
@@ -348,11 +374,13 @@ class Ds3Reader(HidPathReader):
         self._ps1_active = 0x01
         self._layout: HidLayout | None = None
         self._held: NormalizedState | None = None
+        self._trigger_mode: dict[str, str | None] = {"kind": None}
 
     def open(self) -> None:
         super().open()
         self._layout = None
         self._held = None
+        self._trigger_mode = {"kind": None}
         if self.identity.vendor_id == VID and self.identity.product_id in PIDS:
             enable_reports(self)
         if self._dev is None:
@@ -374,7 +402,9 @@ class Ds3Reader(HidPathReader):
             )
             return shown
         if self._layout is not None and not _looks_native(data):
-            parsed = parse_hid_layout(data, self._layout, self._held)
+            parsed = parse_hid_layout(
+                data, self._layout, self._held, self._trigger_mode
+            )
             if parsed is not None:
                 self._held = parsed
                 return parsed
