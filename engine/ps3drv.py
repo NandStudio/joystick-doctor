@@ -9,8 +9,11 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
+from ctypes import wintypes
+
 from engine.device.ds3 import PIDS as DS3_PIDS
 from engine.device.ds3 import VID as DS3_VID
+from engine.device.ds3 import connected_sony_instances
 from engine.net import urlopen
 from engine.state import DeviceIdentity
 
@@ -86,6 +89,163 @@ def helper_status() -> str:
     if scp_installed():
         return "ScpToolkit OK"
     return f"{package_name()} missing"
+
+
+MODES = ("SDF", "GPJ", "SXS", "DS4Windows", "XInput", "CGP", "CGS")
+
+
+class _GUID(ctypes.Structure):
+    _fields_ = [
+        ("Data1", wintypes.DWORD),
+        ("Data2", wintypes.WORD),
+        ("Data3", wintypes.WORD),
+        ("Data4", wintypes.BYTE * 8),
+    ]
+
+
+class _DEVPROPKEY(ctypes.Structure):
+    _fields_ = [
+        ("fmtid", _GUID),
+        ("pid", wintypes.ULONG),
+    ]
+
+
+def _mode_key() -> _DEVPROPKEY:
+    key = _DEVPROPKEY()
+    key.fmtid.Data1 = 0x6D293077
+    key.fmtid.Data2 = 0xC3D6
+    key.fmtid.Data3 = 0x4062
+    key.fmtid.Data4 = (wintypes.BYTE * 8)(0x95, 0x97, 0xBE, 0x43, 0x89, 0x40, 0x4C, 0x02)
+    key.pid = 2
+    return key
+
+
+def mode_index(name: str) -> int:
+    try:
+        return MODES.index(name)
+    except ValueError:
+        return MODES.index("XInput")
+
+
+def _config_path() -> Path:
+    root = os.environ.get("ProgramData", r"C:\ProgramData")
+    return Path(root) / "DsHidMini" / "DsHidMini.json"
+
+
+def _load_config() -> dict:
+    path = _config_path()
+    if not path.is_file():
+        return {}
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8-sig"))
+    except json.JSONDecodeError:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def configured_mode() -> str:
+    global_node = _load_config().get("Global")
+    if isinstance(global_node, dict):
+        name = global_node.get("HidDeviceMode")
+        if isinstance(name, str) and name in MODES:
+            return name
+    return "XInput"
+
+
+def _mode_byte(instance: str) -> int | None:
+    cfg = ctypes.windll.cfgmgr32
+    locate = cfg.CM_Locate_DevNodeW
+    locate.argtypes = [ctypes.POINTER(wintypes.DWORD), wintypes.LPCWSTR, wintypes.ULONG]
+    locate.restype = wintypes.DWORD
+    read = cfg.CM_Get_DevNode_PropertyW
+    read.argtypes = [
+        wintypes.DWORD,
+        ctypes.POINTER(_DEVPROPKEY),
+        ctypes.POINTER(wintypes.ULONG),
+        ctypes.c_void_p,
+        ctypes.POINTER(wintypes.ULONG),
+        wintypes.ULONG,
+    ]
+    read.restype = wintypes.DWORD
+    devinst = wintypes.DWORD()
+    if locate(ctypes.byref(devinst), instance, 0) != 0:
+        return None
+    key = _mode_key()
+    kind = wintypes.ULONG()
+    size = wintypes.ULONG(1)
+    buf = (ctypes.c_ubyte * 1)()
+    if read(devinst, ctypes.byref(key), ctypes.byref(kind), ctypes.addressof(buf), ctypes.byref(size), 0) != 0:
+        return None
+    value = int(buf[0])
+    if 1 <= value <= len(MODES):
+        return value
+    return None
+
+
+def active_mode() -> str:
+    for instance in connected_sony_instances():
+        value = _mode_byte(instance)
+        if value is not None:
+            return MODES[value - 1]
+    return configured_mode()
+
+
+def _with_mode(name: str) -> dict:
+    data = _load_config()
+    global_node = data.get("Global")
+    if not isinstance(global_node, dict):
+        global_node = {}
+        data["Global"] = global_node
+    global_node["HidDeviceMode"] = name
+    return data
+
+
+def _write_config(name: str) -> None:
+    path = _config_path()
+    payload = json.dumps(_with_mode(name), indent=2) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(payload, encoding="utf-8")
+
+
+def _write_config_elevated(name: str) -> None:
+    try:
+        payload = json.dumps(_with_mode(name), indent=2) + "\n"
+    except PermissionError:
+        payload = json.dumps({"Global": {"HidDeviceMode": name}}, indent=2) + "\n"
+    blob = Path(tempfile.gettempdir()) / "joystick-doctor-dshidmini.json"
+    script = Path(tempfile.gettempdir()) / "joystick-doctor-dshidmini.ps1"
+    blob.write_text(payload, encoding="utf-8")
+    dest = str(_config_path())
+    script.write_text(
+        "\n".join(
+            [
+                f"$dest = '{dest}'",
+                f"$src = '{blob}'",
+                "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null",
+                "Copy-Item -LiteralPath $src -Destination $dest -Force",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    status = ctypes.windll.shell32.ShellExecuteW(
+        None,
+        "runas",
+        "powershell.exe",
+        f'-NoProfile -ExecutionPolicy Bypass -File "{script}"',
+        None,
+        0,
+    )
+    if status <= 32:
+        raise Ps3DriverError("DsHidMini setup was cancelled or failed to start (UAC).")
+
+
+def set_mode(name: str) -> None:
+    if name not in MODES:
+        raise Ps3DriverError("Unknown DsHidMini mode.")
+    try:
+        _write_config(name)
+    except PermissionError:
+        _write_config_elevated(name)
 
 
 def needs_helper(device: DeviceIdentity) -> bool:

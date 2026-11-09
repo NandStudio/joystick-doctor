@@ -169,6 +169,34 @@ Item {
                     font.pixelSize: 15
                     font.weight: 600
                 }
+                Text {
+                    visible: app.dshidminiReady
+                    text: app.langTick >= 0 ? app.label("dshm_mode") : ""
+                    color: theme.muted
+                    font.family: app.bodyFamily
+                    font.pixelSize: 12
+                }
+                FieldCombo {
+                    id: modeBox
+                    visible: app.dshidminiReady
+                    Layout.fillWidth: true
+                    model: [
+                        app.langTick >= 0 ? app.label("dshm_sdf") : "",
+                        app.langTick >= 0 ? app.label("dshm_gpj") : "",
+                        app.langTick >= 0 ? app.label("dshm_sxs") : "",
+                        app.langTick >= 0 ? app.label("dshm_ds4") : "",
+                        app.langTick >= 0 ? app.label("dshm_xinput") : "",
+                        app.langTick >= 0 ? app.label("dshm_cgp") : "",
+                        app.langTick >= 0 ? app.label("dshm_cgs") : ""
+                    ]
+                    currentIndex: app.ps3ModeIndex
+                }
+                QuietButton {
+                    visible: app.dshidminiReady
+                    framed: true
+                    text: app.langTick >= 0 ? app.label("dshm_save") : ""
+                    onClicked: app.setPs3Mode(modeBox.currentIndex)
+                }
                 QuietButton {
                     visible: app.ps3Word === (app.langTick >= 0 ? app.label("word_absent") : "")
                     framed: true

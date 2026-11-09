@@ -111,6 +111,7 @@ class AppController(QObject):
         self._ignore_xinput: set[int] = set()
         self._hidden_instances: list[str] = []
         self._ps3_offer_asked = False
+        self._ps3_mode_index = ps3drv.mode_index("XInput")
 
         self._cal = Calibration.default()
         self._cal_lock = threading.Lock()
@@ -234,10 +235,19 @@ class AppController(QObject):
     def _refresh_drivers(self) -> None:
         vigem = tr("word_active") if vigem_installed() else tr("word_absent")
         hide = tr("word_active") if hidhide.is_installed() else tr("word_absent")
-        if vigem == self._vigem_word and hide == self._hid_word and not self._virtual_on:
+        mode = self._ps3_mode_index
+        if ps3drv.dshidmini_installed():
+            mode = ps3drv.mode_index(ps3drv.active_mode())
+        if (
+            vigem == self._vigem_word
+            and hide == self._hid_word
+            and mode == self._ps3_mode_index
+            and not self._virtual_on
+        ):
             return
         self._vigem_word = vigem
         self._hid_word = hide
+        self._ps3_mode_index = mode
         self._emit_chrome()
         self._offer_update()
         self._flush_thanks()
@@ -1285,6 +1295,8 @@ class AppController(QObject):
         )
 
     def _ps3_visible(self) -> bool:
+        if ps3drv.dshidmini_installed():
+            return True
         return any(ps3drv.needs_helper(dev) for dev in self._devices.values())
 
     def _ps3_word(self) -> str:
@@ -1294,6 +1306,25 @@ class AppController(QObject):
 
     def _ps3_name(self) -> str:
         return ps3drv.package_name()
+
+    def _dshidmini_ready(self) -> bool:
+        return ps3drv.dshidmini_installed()
+
+    def _ps3_mode_index_value(self) -> int:
+        return self._ps3_mode_index
+
+    @Slot(int)
+    def setPs3Mode(self, index: int) -> None:
+        if index < 0 or index >= len(ps3drv.MODES):
+            return
+        try:
+            ps3drv.set_mode(ps3drv.MODES[index])
+        except ps3drv.Ps3DriverError as exc:
+            self._note_failure("dshidmini mode", exc)
+            self._set_notice(tr("dshm_denied"))
+            return
+        self._ps3_mode_index = index
+        self._set_notice(tr("dshm_replug"))
 
     def _uptime_text(self) -> str:
         if not self._virtual_on or self._virtual_started <= 0:
@@ -1757,6 +1788,8 @@ class AppController(QObject):
     ps3Visible = Property(bool, _ps3_visible, notify=chromeChanged)
     ps3Word = Property(str, _ps3_word, notify=chromeChanged)
     ps3Name = Property(str, _ps3_name, notify=chromeChanged)
+    dshidminiReady = Property(bool, _dshidmini_ready, notify=chromeChanged)
+    ps3ModeIndex = Property(int, _ps3_mode_index_value, notify=chromeChanged)
     uptimeText = Property(str, _uptime_text, notify=chromeChanged)
     detectedPad = Property(str, _detected_pad, notify=chromeChanged)
     languagePref = Property(str, _language_pref, notify=languageChanged)
