@@ -1,15 +1,28 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import "../controls"
 
 Item {
-    ColumnLayout {
+    Flickable {
+        id: scroller
         anchors.fill: parent
         anchors.leftMargin: 30
         anchors.rightMargin: 30
         anchors.topMargin: 26
         anchors.bottomMargin: 30
-        spacing: 16
+        contentWidth: width
+        contentHeight: body.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        ScrollBar.vertical: ScrollBar {
+            policy: ScrollBar.AsNeeded
+        }
+
+        ColumnLayout {
+            id: body
+            width: scroller.width
+            spacing: 16
 
         Text {
             text: app.langTick >= 0 ? app.label("system_title") : ""
@@ -142,7 +155,6 @@ Item {
         }
 
         Rectangle {
-            visible: app.ps3Visible
             radius: theme.radiusCard
             color: theme.surface
             border.width: theme.edge
@@ -168,6 +180,14 @@ Item {
                     font.family: app.bodyFamily
                     font.pixelSize: 15
                     font.weight: 600
+                }
+                Text {
+                    text: app.langTick >= 0 ? app.label("dshm_note") : ""
+                    color: theme.muted
+                    font.family: app.bodyFamily
+                    font.pixelSize: 13
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
                 }
                 Text {
                     visible: app.dshidminiReady
@@ -198,7 +218,7 @@ Item {
                     onClicked: app.setPs3Mode(modeBox.currentIndex)
                 }
                 QuietButton {
-                    visible: app.ps3Word === (app.langTick >= 0 ? app.label("word_absent") : "")
+                    visible: !app.dshidminiReady
                     framed: true
                     text: app.langTick >= 0 ? app.label("install_driver") : ""
                     onClicked: app.installPs3()
@@ -244,6 +264,6 @@ Item {
                 }
             }
         }
-        Item { Layout.fillHeight: true }
+        }
     }
 }

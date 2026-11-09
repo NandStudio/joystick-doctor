@@ -1295,9 +1295,7 @@ class AppController(QObject):
         )
 
     def _ps3_visible(self) -> bool:
-        if ps3drv.dshidmini_installed():
-            return True
-        return any(ps3drv.needs_helper(dev) for dev in self._devices.values())
+        return True
 
     def _ps3_word(self) -> str:
         if ps3drv.helper_installed():
