@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ctypes
 import time
+from ctypes import wintypes
 from dataclasses import replace
 
 import hid
@@ -12,6 +14,9 @@ from engine.device.hid_util import (
     apply_hat,
     apply_sticks_u8,
     axis_u8,
+    HidLayout,
+    layout_from_descriptor,
+    parse_hid_layout,
     print_loop,
     trigger_u8,
 )
@@ -116,9 +121,11 @@ def parse_native(data: bytes) -> NormalizedState:
     state.x = bool(face & 0x80)  # square
     state.guide = bool(payload[3] & 0x01)
     apply_sticks_u8(state, payload, 5)
-    if len(payload) > 19:
-        state.lt = trigger_u8(payload[17])
-        state.rt = trigger_u8(payload[18])
+    # Bytes 18 and 19 are triangle and circle pressure. L2 and R2 are 14 and 15.
+    if len(payload) > 14:
+        state.lt = trigger_u8(payload[13])
+    if len(payload) > 15:
+        state.rt = trigger_u8(payload[14])
     if state.lt == 0.0 and l2:
         state.lt = 1.0
     if state.rt == 0.0 and r2:
@@ -261,16 +268,101 @@ def enable_reports(reader: HidPathReader) -> None:
         pass
 
 
+_XBOX_ONE_ID = (0x045E, 0x02FF)
+_SONY_MARK = {
+    0x0268: "VID_054C&PID_0268",
+    0x042F: "VID_054C&PID_042F",
+}
+_disguise_cache: dict[str, int | None] = {}
+
+
+def _path_text(path: bytes | str) -> str:
+    if isinstance(path, bytes):
+        return path.decode("ascii", errors="replace")
+    return path
+
+
+def _hid_instance(path: bytes | str) -> str:
+    text = _path_text(path)
+    prefix = "\\\\?\\"
+    if text.startswith(prefix):
+        text = text[len(prefix) :]
+    text = text.split("{", 1)[0]
+    return text.replace("#", "\\").strip("\\")
+
+
+def _parent_ids(instance: str) -> list[str]:
+    cfg = ctypes.windll.cfgmgr32
+    locate = cfg.CM_Locate_DevNodeW
+    locate.argtypes = [ctypes.POINTER(wintypes.DWORD), wintypes.LPCWSTR, wintypes.ULONG]
+    locate.restype = wintypes.DWORD
+    parent_of = cfg.CM_Get_Parent
+    parent_of.argtypes = [ctypes.POINTER(wintypes.DWORD), wintypes.DWORD, wintypes.ULONG]
+    parent_of.restype = wintypes.DWORD
+    device_id = cfg.CM_Get_Device_IDW
+    device_id.argtypes = [wintypes.DWORD, wintypes.LPWSTR, wintypes.ULONG, wintypes.ULONG]
+    device_id.restype = wintypes.DWORD
+    current = wintypes.DWORD()
+    if locate(ctypes.byref(current), instance, 0) != 0:
+        return []
+    found: list[str] = []
+    for _ in range(6):
+        parent = wintypes.DWORD()
+        if parent_of(ctypes.byref(parent), current, 0) != 0:
+            break
+        current = parent
+        name = ctypes.create_unicode_buffer(512)
+        if device_id(current, name, 512, 0) != 0:
+            break
+        if not name.value:
+            break
+        found.append(name.value)
+    return found
+
+
+def disguised_sony_pid(device: DeviceIdentity) -> int | None:
+    """DsHidMini XInput mode publishes the DS3 as an Xbox One (045E:02FF)."""
+    if (device.vendor_id, device.product_id) != _XBOX_ONE_ID:
+        return None
+    key = _path_text(device.path)
+    cached = _disguise_cache.get(key)
+    if key in _disguise_cache:
+        return cached
+    sony: int | None = None
+    try:
+        parents = " ".join(_parent_ids(_hid_instance(device.path))).upper()
+    except OSError:
+        parents = ""
+    for pid, mark in _SONY_MARK.items():
+        if mark in parents:
+            sony = pid
+            break
+    _disguise_cache[key] = sony
+    return sony
+
+
 class Ds3Reader(HidPathReader):
     def __init__(self, identity: DeviceIdentity):
         super().__init__(identity)
         self._ps1_ports: dict[int, NormalizedState] = {}
         self._ps1_active = 0x01
+        self._layout: HidLayout | None = None
+        self._held: NormalizedState | None = None
 
     def open(self) -> None:
         super().open()
+        self._layout = None
+        self._held = None
         if self.identity.vendor_id == VID and self.identity.product_id in PIDS:
             enable_reports(self)
+        if self._dev is None:
+            return
+        try:
+            raw = self._dev.get_report_descriptor()
+        except (OSError, ValueError, TypeError):
+            return
+        if raw:
+            self._layout = layout_from_descriptor(bytes(raw))
 
     def read(self) -> NormalizedState | None:
         data = self.read_raw()
@@ -281,7 +373,14 @@ class Ds3Reader(HidPathReader):
                 self._ps1_ports, self._ps1_active, data
             )
             return shown
-        return parse_report(data)
+        if self._layout is not None and not _looks_native(data):
+            parsed = parse_hid_layout(data, self._layout, self._held)
+            if parsed is not None:
+                self._held = parsed
+                return parsed
+        state = parse_report(data)
+        self._held = state
+        return state
 
 
 if __name__ == "__main__":

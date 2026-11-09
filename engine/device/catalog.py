@@ -7,6 +7,7 @@ from engine.device.ds3 import CLONE_IDS as DS3_CLONES
 from engine.device.ds3 import PIDS as DS3_PIDS
 from engine.device.ds3 import VID as DS3_VID
 from engine.device.ds3 import Ds3Reader
+from engine.device.ds3 import disguised_sony_pid
 from engine.device.ds3 import enumerate_devices as enumerate_ds3
 from engine.device.ds4 import PIDS as DS4_PIDS
 from engine.device.ds4 import VID as DS4_VID
@@ -56,8 +57,12 @@ def _xinput_instance(path: bytes | str) -> int | None:
     return int(match.group(1))
 
 
-def _prefer_xinput(device: DeviceIdentity) -> bool:
+def _prefer_xinput(
+    device: DeviceIdentity, hid: DeviceIdentity | None = None
+) -> bool:
     """Known Xbox and XInput pads stay on XInputGetState. A nameless slot does not."""
+    if hid is not None and disguised_sony_pid(hid):
+        return False
     if not device.vendor_id:
         return False
     if device.vendor_id == 0x045E:
@@ -68,6 +73,8 @@ def _prefer_xinput(device: DeviceIdentity) -> bool:
 def _hidden_by_xinput(
     device: DeviceIdentity, xinput_devs: list[DeviceIdentity]
 ) -> bool:
+    if disguised_sony_pid(device):
+        return False
     if device.vendor_id == 0x045E and any(item.vendor_id == 0x045E for item in xinput_devs):
         return True
     if (device.vendor_id, device.product_id) in _XINPUT_ALSO_HID and any(
@@ -83,6 +90,11 @@ def _hidden_by_xinput(
 
 
 def _classify_hid(device: DeviceIdentity) -> DeviceIdentity:
+    sony = disguised_sony_pid(device)
+    if sony == 0x0268:
+        return replace(device, backend="ds3", product_name="DualShock 3")
+    if sony == 0x042F:
+        return replace(device, backend="ds3", product_name="PS3 Navigation")
     if device.vendor_id == DS3_VID and device.product_id in DS3_PIDS:
         return replace(device, backend="ds3")
     if (device.vendor_id, device.product_id) in DS3_CLONES:
@@ -103,7 +115,7 @@ def enumerate_all() -> list[DeviceIdentity]:
     used_paths: set[str] = set()
     for device in bound:
         extra = assigned.get(device.index) if device.index is not None else None
-        if not _prefer_xinput(device):
+        if not _prefer_xinput(device, extra):
             continue
         preferred.append(device)
         if extra is not None:
