@@ -189,18 +189,58 @@ def _apply_hat_byte(state: NormalizedState, value: int) -> None:
         _apply_hat(state, value)
 
 
-def _parse_generic_u8(payload: bytes) -> NormalizedState:
+def _apply_trigger_pair(
+    state: NormalizedState,
+    primary: int,
+    secondary: int,
+    trigger_mode: dict[str, str | None] | None,
+) -> None:
+    # One byte around 128 is both triggers. A second byte near 0 is not RT.
+    if trigger_mode is not None and secondary <= 8:
+        kind = trigger_mode.get("kind")
+        axis = max(-1.0, min(1.0, (primary / 255.0) * 2.0 - 1.0))
+        if kind != "split" and abs(axis) <= 0.2:
+            trigger_mode["kind"] = "split"
+            kind = "split"
+        if kind == "split":
+            if axis >= 0:
+                state.lt, state.rt = axis, 0.0
+            else:
+                state.lt, state.rt = 0.0, -axis
+            return
+    state.lt = _trigger_u8(primary)
+    state.rt = _trigger_u8(secondary)
+
+
+def _parse_generic_u8(
+    payload: bytes, trigger_mode: dict[str, str | None] | None = None
+) -> NormalizedState:
     state = NormalizedState(timestamp=time.perf_counter())
     if len(payload) >= 4:
         _apply_sticks(state, payload)
+    # Once the shared trigger is known, byte 4 stays that axis even at 0.
+    # Otherwise 0 looks like a hat and RT never registers.
+    if (
+        trigger_mode is not None
+        and trigger_mode.get("kind") == "split"
+        and len(payload) >= 5
+    ):
+        secondary = payload[5] if len(payload) > 5 else 0
+        _apply_trigger_pair(state, payload[4], secondary, trigger_mode)
+        if len(payload) >= 7 and _is_hat_byte(payload[6]):
+            _apply_hat_byte(state, payload[6])
+            bits = payload[7] if len(payload) > 7 else 0
+            if len(payload) > 8:
+                bits |= payload[8] << 8
+            _apply_buttons(state, bits)
+        return state
     # A hat in byte 4 means this report has no analog triggers.
     if (
         len(payload) >= 8
         and not _is_hat_byte(payload[4])
         and _is_hat_byte(payload[6])
     ):
-        state.lt = _trigger_u8(payload[4])
-        state.rt = _trigger_u8(payload[5])
+        _apply_trigger_pair(state, payload[4], payload[5], trigger_mode)
         _apply_hat_byte(state, payload[6])
         bits = payload[7] if len(payload) > 7 else 0
         if len(payload) > 8:
@@ -214,8 +254,8 @@ def _parse_generic_u8(payload: bytes) -> NormalizedState:
             bits |= payload[6] << 8
         _apply_buttons(state, bits)
     elif len(payload) >= 6:
-        state.lt = _trigger_u8(payload[4])
-        state.rt = _trigger_u8(payload[5])
+        secondary = payload[5]
+        _apply_trigger_pair(state, payload[4], secondary, trigger_mode)
     return state
 
 
@@ -266,7 +306,11 @@ def _keeps_own_parser(identity: DeviceIdentity | None) -> bool:
     return (vid, pid) in _DS3_CLONES
 
 
-def parse_report(data: bytes, identity: DeviceIdentity | None = None) -> NormalizedState:
+def parse_report(
+    data: bytes,
+    identity: DeviceIdentity | None = None,
+    trigger_mode: dict[str, str | None] | None = None,
+) -> NormalizedState:
     if _is_x360_report(data):
         return _parse_x360(data)
     vid = identity.vendor_id if identity else 0
@@ -287,7 +331,7 @@ def parse_report(data: bytes, identity: DeviceIdentity | None = None) -> Normali
         return parse_ds5(data)
     if vid == _SONY_VID and pid in _DS4_PIDS:
         return parse_ds4(data)
-    return _parse_generic_u8(_payload(data))
+    return _parse_generic_u8(_payload(data), trigger_mode)
 
 
 class GenericHidReader:
@@ -296,6 +340,7 @@ class GenericHidReader:
         self._dev: hid.device | None = None
         self._layout: HidLayout | None = None
         self._last: NormalizedState | None = None
+        self._trigger_mode: dict[str, str | None] = {"kind": None}
 
     def open(self) -> None:
         device = hid.device()
@@ -307,6 +352,7 @@ class GenericHidReader:
         self._dev = device
         self._layout = None
         self._last = None
+        self._trigger_mode = {"kind": None}
         if _keeps_own_parser(self.identity):
             return
         try:
@@ -335,11 +381,15 @@ class GenericHidReader:
         if data is None:
             return None
         if self._layout is not None and not _is_x360_report(data):
-            parsed = parse_hid_layout(data, self._layout, self._last)
+            parsed = parse_hid_layout(
+                data, self._layout, self._last, self._trigger_mode
+            )
             if parsed is not None:
                 self._last = parsed
                 return parsed
-        return parse_report(data, self.identity)
+        state = parse_report(data, self.identity, self._trigger_mode)
+        self._last = state
+        return state
 
     def __enter__(self) -> GenericHidReader:
         self.open()

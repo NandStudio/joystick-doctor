@@ -323,9 +323,17 @@ def _read_bits(data: bytes, start: int, size: int) -> int | None:
     return value
 
 
+def _wide_high(value: int, field: HidField) -> int:
+    """A 16-bit axis whose descriptor says 255 still carries byte*257."""
+    high = field.logical_max
+    if field.size > 8 and field.logical_min >= 0 and high <= 0xFF and value > high:
+        return (1 << field.size) - 1
+    return high
+
+
 def _axis_from_field(value: int, field: HidField) -> float:
     low = field.logical_min
-    high = field.logical_max
+    high = _wide_high(value, field)
     if high <= low:
         return 0.0
     if low < 0:
@@ -339,8 +347,18 @@ def _axis_from_field(value: int, field: HidField) -> float:
 
 
 def _trigger_from_field(value: int, field: HidField) -> float:
+    if value <= 0:
+        return 0.0
+    # byte*257 stores the same 0-255 sample in both bytes. 0 stays released.
+    if (
+        field.size == 16
+        and field.logical_min >= 0
+        and field.logical_max <= 0xFF
+        and value == (value & 0xFF) * 257
+    ):
+        return max(0.0, min(1.0, (value // 257) / 255.0))
     low = field.logical_min
-    high = field.logical_max
+    high = _wide_high(value, field)
     if high <= low:
         return 0.0
     return max(0.0, min(1.0, (value - low) / (high - low)))
@@ -357,10 +375,31 @@ def _hat_from_field(value: int, field: HidField) -> int | None:
     return index
 
 
+def _split_centered_trigger(value: int, field: HidField) -> tuple[float, float]:
+    axis = _axis_from_field(value, field)
+    if axis >= 0:
+        return axis, 0.0
+    return 0.0, -axis
+
+
+def _remember_trigger(
+    value: int, field: HidField, trigger_mode: dict[str, str | None]
+) -> str | None:
+    # A zero report must not lock the unipolar scale. The shared axis
+    # shows itself when its rest sits at the center.
+    if trigger_mode.get("kind") == "split":
+        return "split"
+    if abs(_axis_from_field(value, field)) <= 0.2:
+        trigger_mode["kind"] = "split"
+        return "split"
+    return None
+
+
 def parse_hid_layout(
     data: bytes,
     layout: HidLayout,
     previous: NormalizedState | None = None,
+    trigger_mode: dict[str, str | None] | None = None,
 ) -> NormalizedState | None:
     """Read one report. Bits that do not fit keep the previous sticks and buttons."""
     if not data or layout is None:
@@ -439,6 +478,20 @@ def parse_hid_layout(
             state.lt = _trigger_from_field(brake[0], brake[1])
         if accel is not None:
             state.rt = _trigger_from_field(accel[0], accel[1])
+    elif trigger_mode is not None and axis_z is not None:
+        kind = _remember_trigger(axis_z[0], axis_z[1], trigger_mode)
+        other_idle = axis_rz is None
+        if axis_rz is not None:
+            other_idle = (
+                abs(_axis_from_field(axis_rz[0], axis_rz[1])) <= 0.2
+                or _trigger_from_field(axis_rz[0], axis_rz[1]) <= 0.05
+            )
+        if kind == "split" and other_idle:
+            state.lt, state.rt = _split_centered_trigger(axis_z[0], axis_z[1])
+        else:
+            state.lt = _trigger_from_field(axis_z[0], axis_z[1])
+            if axis_rz is not None:
+                state.rt = _trigger_from_field(axis_rz[0], axis_rz[1])
     else:
         if axis_z is not None:
             state.lt = _trigger_from_field(axis_z[0], axis_z[1])
