@@ -11,6 +11,7 @@ from engine.device.ds3 import parse_ps1_usb
 from engine.device.ds3 import parse_report as parse_ds3
 from engine.device.ds4 import parse_report as parse_ds4
 from engine.device.ds5 import parse_report as parse_ds5
+from engine.device.hid_util import HidLayout, layout_from_descriptor, parse_hid_layout
 from engine.state import DeviceIdentity, NormalizedState
 
 _GENERIC_DESKTOP = 0x01
@@ -113,18 +114,14 @@ def _axis_i16(value: int) -> float:
 
 
 def _is_x360_report(data: bytes) -> bool:
-    if len(data) < 14:
-        return False
-    if data[0] == 0x00 and data[1] == 0x14:
-        return True
-    return data[0] == 0x14 and len(data) >= 13
+    # A report id of 0x14 is not the Xbox 360 header. That header is 00 14.
+    return len(data) >= 14 and data[0] == 0x00 and data[1] == 0x14
 
 
 def _parse_x360(data: bytes) -> NormalizedState:
-    off = 0 if data[0] == 0x00 and data[1] == 0x14 else -1
     state = NormalizedState(timestamp=time.perf_counter())
-    digital = data[2 + off]
-    face = data[3 + off]
+    digital = data[2]
+    face = data[3]
     state.dpad_up = bool(digital & 0x01)
     state.dpad_down = bool(digital & 0x02)
     state.dpad_left = bool(digital & 0x04)
@@ -140,12 +137,12 @@ def _parse_x360(data: bytes) -> NormalizedState:
     state.b = bool(face & 0x20)
     state.x = bool(face & 0x40)
     state.y = bool(face & 0x80)
-    state.lt = _trigger_u8(data[4 + off])
-    state.rt = _trigger_u8(data[5 + off])
-    state.lx = _axis_i16(int.from_bytes(data[6 + off : 8 + off], "little", signed=True))
-    state.ly = _axis_i16(int.from_bytes(data[8 + off : 10 + off], "little", signed=True))
-    state.rx = _axis_i16(int.from_bytes(data[10 + off : 12 + off], "little", signed=True))
-    state.ry = _axis_i16(int.from_bytes(data[12 + off : 14 + off], "little", signed=True))
+    state.lt = _trigger_u8(data[4])
+    state.rt = _trigger_u8(data[5])
+    state.lx = _axis_i16(int.from_bytes(data[6:8], "little", signed=True))
+    state.ly = _axis_i16(int.from_bytes(data[8:10], "little", signed=True))
+    state.rx = _axis_i16(int.from_bytes(data[10:12], "little", signed=True))
+    state.ry = _axis_i16(int.from_bytes(data[12:14], "little", signed=True))
     return state
 
 
@@ -182,17 +179,43 @@ def _parse_logitech_dinput(data: bytes) -> NormalizedState:
     return state
 
 
+def _is_hat_byte(value: int) -> bool:
+    # 0-7 is a direction, 8 and 15 are centered. 0x80 is an axis, not a hat.
+    return value <= 8 or value == 0x0F
+
+
+def _apply_hat_byte(state: NormalizedState, value: int) -> None:
+    if value <= 7:
+        _apply_hat(state, value)
+
+
 def _parse_generic_u8(payload: bytes) -> NormalizedState:
     state = NormalizedState(timestamp=time.perf_counter())
     if len(payload) >= 4:
         _apply_sticks(state, payload)
-    # Hat is a low nibble 0-8; high nibble must be 0 so 0x80 is not "up".
-    if len(payload) >= 6 and payload[4] <= 8:
-        _apply_hat(state, payload[4])
+    # A hat in byte 4 means this report has no analog triggers.
+    if (
+        len(payload) >= 8
+        and not _is_hat_byte(payload[4])
+        and _is_hat_byte(payload[6])
+    ):
+        state.lt = _trigger_u8(payload[4])
+        state.rt = _trigger_u8(payload[5])
+        _apply_hat_byte(state, payload[6])
+        bits = payload[7] if len(payload) > 7 else 0
+        if len(payload) > 8:
+            bits |= payload[8] << 8
+        _apply_buttons(state, bits)
+        return state
+    if len(payload) >= 6 and _is_hat_byte(payload[4]):
+        _apply_hat_byte(state, payload[4])
         bits = payload[5]
         if len(payload) >= 7:
             bits |= payload[6] << 8
         _apply_buttons(state, bits)
+    elif len(payload) >= 6:
+        state.lt = _trigger_u8(payload[4])
+        state.rt = _trigger_u8(payload[5])
     return state
 
 
@@ -227,6 +250,22 @@ def _parse_dup16(data: bytes) -> NormalizedState:
     return state
 
 
+def _keeps_own_parser(identity: DeviceIdentity | None) -> bool:
+    if identity is None:
+        return False
+    vid = identity.vendor_id
+    pid = identity.product_id
+    if (vid, pid) == _PS1_USB_ID:
+        return True
+    if vid == _LOGITECH_VID and pid in _LOGITECH_DINPUT:
+        return True
+    if vid == _LOGITECH_VID and pid == _F310_PID:
+        return True
+    if vid == _SONY_VID and pid in _DS3_PIDS | _DS4_PIDS | _DS5_PIDS:
+        return True
+    return (vid, pid) in _DS3_CLONES
+
+
 def parse_report(data: bytes, identity: DeviceIdentity | None = None) -> NormalizedState:
     if _is_x360_report(data):
         return _parse_x360(data)
@@ -255,6 +294,8 @@ class GenericHidReader:
     def __init__(self, identity: DeviceIdentity):
         self.identity = identity
         self._dev: hid.device | None = None
+        self._layout: HidLayout | None = None
+        self._last: NormalizedState | None = None
 
     def open(self) -> None:
         device = hid.device()
@@ -264,6 +305,17 @@ class GenericHidReader:
         device.open_path(path)
         device.set_nonblocking(True)
         self._dev = device
+        self._layout = None
+        self._last = None
+        if _keeps_own_parser(self.identity):
+            return
+        try:
+            raw = device.get_report_descriptor()
+        except (OSError, ValueError, TypeError):
+            return
+        if not raw:
+            return
+        self._layout = layout_from_descriptor(bytes(raw))
 
     def close(self) -> None:
         if self._dev is not None:
@@ -282,6 +334,11 @@ class GenericHidReader:
         data = self.read_raw()
         if data is None:
             return None
+        if self._layout is not None and not _is_x360_report(data):
+            parsed = parse_hid_layout(data, self._layout, self._last)
+            if parsed is not None:
+                self._last = parsed
+                return parsed
         return parse_report(data, self.identity)
 
     def __enter__(self) -> GenericHidReader:

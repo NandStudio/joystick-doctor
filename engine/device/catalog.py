@@ -56,17 +56,29 @@ def _xinput_instance(path: bytes | str) -> int | None:
     return int(match.group(1))
 
 
+def _prefer_xinput(device: DeviceIdentity) -> bool:
+    """Known Xbox and XInput pads stay on XInputGetState. A nameless slot does not."""
+    if not device.vendor_id:
+        return False
+    if device.vendor_id == 0x045E:
+        return True
+    return (device.vendor_id, device.product_id) in _XINPUT_ALSO_HID
+
+
 def _hidden_by_xinput(
     device: DeviceIdentity, xinput_devs: list[DeviceIdentity]
 ) -> bool:
-    if device.vendor_id == 0x045E:
+    if device.vendor_id == 0x045E and any(item.vendor_id == 0x045E for item in xinput_devs):
         return True
-    if (device.vendor_id, device.product_id) in _XINPUT_ALSO_HID:
+    if (device.vendor_id, device.product_id) in _XINPUT_ALSO_HID and any(
+        (item.vendor_id, item.product_id) == (device.vendor_id, device.product_id)
+        for item in xinput_devs
+    ):
         return True
     return any(
-        xi.vendor_id == device.vendor_id and xi.product_id == device.product_id
-        for xi in xinput_devs
-        if xi.vendor_id and xi.product_id
+        item.vendor_id == device.vendor_id and item.product_id == device.product_id
+        for item in xinput_devs
+        if _prefer_xinput(item)
     )
 
 
@@ -86,20 +98,36 @@ def _classify_hid(device: DeviceIdentity) -> DeviceIdentity:
 
 def enumerate_all() -> list[DeviceIdentity]:
     hid_devs = enumerate_hid()
-    xinput_devs = _bind_xinput_identity(enumerate_xinput(), hid_devs)
-    hide_xinput_hid = bool(xinput_devs)
-    devices = list(xinput_devs)
+    bound, assigned = _bind_xinput_identity(enumerate_xinput(), hid_devs)
+    preferred: list[DeviceIdentity] = []
+    used_paths: set[str] = set()
+    for device in bound:
+        extra = assigned.get(device.index) if device.index is not None else None
+        if not _prefer_xinput(device):
+            continue
+        preferred.append(device)
+        if extra is not None:
+            used_paths.add(_path_key(extra.path))
+    hid_kept: list[DeviceIdentity] = []
     for hid_dev in hid_devs:
-        if _xinput_instance(hid_dev.path) is not None:
+        if _path_key(hid_dev.path) in used_paths:
             continue
-        if hide_xinput_hid and _hidden_by_xinput(hid_dev, xinput_devs):
+        if preferred and _hidden_by_xinput(hid_dev, preferred):
             continue
-        devices.append(_classify_hid(hid_dev))
+        hid_kept.append(_classify_hid(hid_dev))
+    devices = list(preferred)
+    devices.extend(hid_kept)
+    # An XInput slot with no VID stays only when no HID gamepad was found.
+    if not hid_kept:
+        seen_slots = {device.index for device in preferred}
+        for device in bound:
+            if device.index not in seen_slots:
+                devices.append(device)
     seen = {_path_key(dev.path) for dev in devices}
     for ds3 in enumerate_ds3():
         if _path_key(ds3.path) in seen:
             continue
-        if hide_xinput_hid and _hidden_by_xinput(ds3, xinput_devs):
+        if preferred and _hidden_by_xinput(ds3, preferred):
             continue
         devices.append(ds3)
         seen.add(_path_key(ds3.path))
@@ -114,7 +142,7 @@ def _path_key(path: bytes | str) -> str:
 
 def _bind_xinput_identity(
     devices: list[DeviceIdentity], hid_devs: list[DeviceIdentity]
-) -> list[DeviceIdentity]:
+) -> tuple[list[DeviceIdentity], dict[int, DeviceIdentity]]:
     """Copy VID/PID only from the HID interface of that XInput slot.
 
     A single IG_00 used to be stamped onto every slot. The second pad,
@@ -162,7 +190,7 @@ def _bind_xinput_identity(
                 product_name=f"{extra.product_name} (XInput)",
             )
         )
-    return bound
+    return bound, assigned
 
 
 def hide_paths_for(identity: DeviceIdentity) -> list[bytes | str]:
