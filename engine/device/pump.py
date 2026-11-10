@@ -4,6 +4,7 @@ import threading
 import time
 
 from engine.device.catalog import enumerate_all, reader_for
+from engine.device.hid_generic import HidTrace
 from engine.device.hotplug import HotplugMonitor
 from engine.state import DeviceIdentity, NormalizedState
 
@@ -22,6 +23,7 @@ class DevicePump:
         self._last_read: float | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._trace: list[HidTrace] = []
 
     def start(self) -> None:
         if self._thread is not None:
@@ -52,6 +54,10 @@ class DevicePump:
         with self._lock:
             return self._packets, self._gap
 
+    def trace(self) -> list[HidTrace]:
+        with self._lock:
+            return list(self._trace)
+
     def _run(self) -> None:
         try:
             reader = reader_for(self.identity)
@@ -62,6 +68,8 @@ class DevicePump:
                 self._connected = False
             return
         try:
+            with self._lock:
+                self._trace = _reader_trace(reader)
             while not self._stop.is_set():
                 state = reader.read()
                 if state is None:
@@ -78,6 +86,7 @@ class DevicePump:
                     self._last_read = now
                     self._packets += 1
                     self._state = state
+                    self._trace = _reader_trace(reader)
         except BaseException as exc:
             with self._lock:
                 self._error = exc
@@ -87,6 +96,16 @@ class DevicePump:
                 reader.close()
             except Exception:
                 pass
+
+
+def _reader_trace(reader: object) -> list[HidTrace]:
+    take = getattr(reader, "trace", None)
+    if take is None:
+        return []
+    rows = take()
+    if not isinstance(rows, list):
+        return []
+    return list(rows)
 
 
 if __name__ == "__main__":

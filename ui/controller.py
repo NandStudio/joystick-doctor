@@ -12,6 +12,7 @@ from PySide6.QtGui import QDesktopServices
 
 from engine import hidhide, ps3drv
 from engine.device.catalog import device_key, enumerate_all, hide_paths_for
+from engine.device.hid_generic import HidTrace
 from engine.device.hotplug import HotplugMonitor
 from engine.device.pump import DevicePump
 from engine.device.xinput import enumerate_devices as enumerate_xinput
@@ -33,6 +34,17 @@ from engine.virtual import VirtualXbox
 from ui.assets import asset_path, bundle_root, logo_icon
 from ui.i18n import set_language, tr
 from ui.theme import Palette
+
+
+def _trace_line(row: HidTrace) -> str:
+    if row.kind == "pad":
+        return tr(
+            "dragon_pad",
+            product=row.product or "-",
+            maker=row.maker or "-",
+            descriptor=row.descriptor or "-",
+        )
+    return tr("dragon_report", report=row.report, parsed=row.parsed)
 
 
 def _button_label(key: str) -> str:
@@ -100,6 +112,7 @@ class AppController(QObject):
         self._page = "diagnostico"
         self._devices: dict[str, DeviceIdentity] = {}
         self._pump: DevicePump | None = None
+        self._traced = 0
         self._session = "empty"
         self._session_detail = ""
         self._view = "physical"
@@ -252,6 +265,20 @@ class AppController(QObject):
         self._offer_update()
         self._flush_thanks()
 
+    def _drain_trace(self) -> None:
+        if not self._debug:
+            return
+        pump = self._pump
+        if pump is None:
+            return
+        rows = pump.trace()
+        if len(rows) <= self._traced:
+            return
+        fresh = rows[self._traced :]
+        self._traced = len(rows)
+        for row in fresh:
+            self._log_event("INFO", _trace_line(row))
+
     def _log_event(self, level: str, text: str) -> None:
         self._log.append(
             {
@@ -314,6 +341,7 @@ class AppController(QObject):
         if self._pump is not None:
             self._pump.stop()
             self._pump = None
+        self._traced = 0
         self._has_sample = False
         self._packets = 0
         self._poll_hz = -1.0
@@ -478,6 +506,7 @@ class AppController(QObject):
     def _tick(self) -> None:
         if self._pump is None:
             return
+        self._drain_trace()
         if self._virtual.error():
             self._notice = tr("virtual_err", error=self._virtual.error())
             self._log_event("WARN", tr("log_error", text=str(self._virtual.error())))
@@ -1157,6 +1186,12 @@ class AppController(QObject):
             lines.append("(empty)")
         for item in self._log:
             lines.append(f"{item.get('time', '')} {item.get('level', '')} {item.get('text', '')}")
+        lines.append("reports:")
+        rows = self._pump.trace() if self._pump is not None else []
+        if not rows:
+            lines.append("(none)")
+        for row in rows:
+            lines.append(_trace_line(row))
         return "\n".join(lines)
 
     def _check_updates(self, manual: bool) -> None:
