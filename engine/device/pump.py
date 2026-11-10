@@ -24,6 +24,8 @@ class DevicePump:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._trace: list[HidTrace] = []
+        self._reader: object | None = None
+        self._descriptor = ""
 
     def start(self) -> None:
         if self._thread is not None:
@@ -58,6 +60,17 @@ class DevicePump:
         with self._lock:
             return list(self._trace)
 
+    def descriptor(self) -> str:
+        with self._lock:
+            return self._descriptor
+
+    def set_buttons(self, names: tuple[str, ...] | None) -> None:
+        with self._lock:
+            reader = self._reader
+        apply = getattr(reader, "set_buttons", None) if reader is not None else None
+        if apply is not None:
+            apply(names)
+
     def _run(self) -> None:
         try:
             reader = reader_for(self.identity)
@@ -68,7 +81,11 @@ class DevicePump:
                 self._connected = False
             return
         try:
+            report = getattr(reader, "descriptor_hex", None)
+            desc = report() if report is not None else ""
             with self._lock:
+                self._reader = reader
+                self._descriptor = desc if isinstance(desc, str) else ""
                 self._trace = _reader_trace(reader)
             while not self._stop.is_set():
                 state = reader.read()
@@ -92,6 +109,8 @@ class DevicePump:
                 self._error = exc
                 self._connected = False
         finally:
+            with self._lock:
+                self._reader = None
             try:
                 reader.close()
             except Exception:

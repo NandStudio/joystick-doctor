@@ -227,6 +227,47 @@ Item {
         }
 
         Rectangle {
+            visible: app.genericPad
+            radius: theme.radiusCard
+            color: theme.surface
+            border.width: theme.edge
+            border.color: theme.stroke
+            Layout.fillWidth: true
+            implicitHeight: mapCol.implicitHeight + 36
+            ColumnLayout {
+                id: mapCol
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: 18
+                spacing: 8
+                Text {
+                    text: app.langTick >= 0 ? app.label("map_title") : ""
+                    color: theme.ink
+                    font.family: app.displayFamily
+                    font.pixelSize: 17
+                }
+                Text {
+                    text: app.langTick >= 0 ? app.label("map_note") : ""
+                    color: theme.muted
+                    font.family: app.bodyFamily
+                    font.pixelSize: 13
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+                FieldCombo {
+                    Layout.fillWidth: true
+                    model: [
+                        app.langTick >= 0 ? app.label("map_generic") : "",
+                        app.langTick >= 0 ? app.label("map_a1wc") : ""
+                    ]
+                    currentIndex: app.genericMapIndex
+                    onActivated: app.setGenericMap(currentIndex)
+                }
+            }
+        }
+
+        Rectangle {
             radius: theme.radiusCard
             color: theme.surface
             border.width: theme.edge

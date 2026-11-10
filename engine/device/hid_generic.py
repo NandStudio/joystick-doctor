@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass
 
@@ -373,6 +374,45 @@ def _is_dragonrise(identity: DeviceIdentity) -> bool:
     return (identity.vendor_id, identity.product_id) == _DRAGONRISE_ID
 
 
+_A1WC_BUTTONS = ("a", "b", "x", "y", "lb", "rb", "back", "start", "ls", "rs")
+_A1WC_DESCRIPTOR = bytes.fromhex(
+    "05 01 09 05 a1 01 09 00 a1 00 09 30 09 31 15 00 25 ff 35 00 45 ff "
+    "75 10 95 02 81 02 c0 09 00 a1 00 09 33 09 34 15 00 25 ff 75 10 95 02 "
+    "81 02 c0 09 00 a1 00 09 32 15 00 25 ff 75 10 95 01 81 02 c0 05 09 19 01 "
+    "29 10 15 00 25 01 75 01 95 10 45 00 81 02 05 01 09 39 15 01 25 08 35 00 "
+    "46 3b 10 65 0e 75 04 95 01 81 42 75 04 95 01 81 03 75 08 95 02 81 03 c0"
+)
+MAP_GENERIC = "generic"
+MAP_A1WC = "a1wc"
+
+
+@dataclass(frozen=True, slots=True)
+class GenericMap:
+    id: str
+    name: str
+    descriptor: bytes
+    buttons: tuple[str, ...]
+
+
+GENERIC_MAPS: tuple[GenericMap, ...] = (
+    GenericMap(MAP_A1WC, "DualShock 3 A1 WC", _A1WC_DESCRIPTOR, _A1WC_BUTTONS),
+)
+
+
+def generic_map_for(descriptor: bytes) -> GenericMap | None:
+    found = [item for item in GENERIC_MAPS if item.descriptor == descriptor]
+    if len(found) != 1:
+        return None
+    return found[0]
+
+
+def map_buttons(map_id: str) -> tuple[str, ...] | None:
+    for item in GENERIC_MAPS:
+        if item.id == map_id:
+            return item.buttons
+    return None
+
+
 def _hid_string(read) -> str:
     try:
         value = read()
@@ -444,6 +484,9 @@ class GenericHidReader:
         self._trace: list[HidTrace] = []
         self._seen: set[bytes] = set()
         self._tracing = False
+        self._descriptor_hex = ""
+        self._buttons: tuple[str, ...] | None = None
+        self._buttons_lock = threading.Lock()
 
     def open(self) -> None:
         device = hid.device()
@@ -460,6 +503,9 @@ class GenericHidReader:
         self._trace = []
         self._seen = set()
         self._tracing = False
+        self._descriptor_hex = ""
+        with self._buttons_lock:
+            self._buttons = None
         if _keeps_own_parser(self.identity):
             return
         raw = b""
@@ -470,6 +516,7 @@ class GenericHidReader:
         except (OSError, ValueError, TypeError):
             raw = b""
         if raw:
+            self._descriptor_hex = raw.hex()
             self._layout = layout_from_descriptor(raw)
         if _is_dragonrise(self.identity):
             self._dragon = dragonrise_layout(raw)
@@ -498,6 +545,13 @@ class GenericHidReader:
             return None
         return bytes(data)
 
+    def descriptor_hex(self) -> str:
+        return self._descriptor_hex
+
+    def set_buttons(self, names: tuple[str, ...] | None) -> None:
+        with self._buttons_lock:
+            self._buttons = names
+
     def trace(self) -> list[HidTrace]:
         return list(self._trace)
 
@@ -511,8 +565,17 @@ class GenericHidReader:
             self._note(data, state)
         return state
 
+    def _chosen_buttons(self) -> tuple[str, ...] | None:
+        with self._buttons_lock:
+            chosen = self._buttons
+        if chosen is not None:
+            return chosen
+        if self._dragon is not None:
+            return self._dragon.buttons
+        return None
+
     def _parse(self, data: bytes) -> NormalizedState:
-        names = self._dragon.buttons if self._dragon is not None else None
+        names = self._chosen_buttons()
         if self._layout is not None and not _is_x360_report(data):
             parsed = parse_hid_layout(
                 data, self._layout, self._last, self._trigger_mode, names
