@@ -237,6 +237,12 @@ Item {
                     detail: app.langTick >= 0 ? app.label("about_hid_note") : ""
                     linkKey: "hidhide"
                 }
+                CreditRow {
+                    title: "DsHidMini, " + (app.langTick >= 0 ? app.label("about_by") : "")
+                    status: app.langTick >= 0 ? app.label("about_visit") : ""
+                    detail: app.langTick >= 0 ? app.label("about_dshm_note") : ""
+                    linkKey: "dshidmini"
+                }
             }
         }
         Item { Layout.fillHeight: true }

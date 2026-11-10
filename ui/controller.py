@@ -1114,6 +1114,7 @@ class AppController(QObject):
             "cafecito": "https://cafecito.app/lucma",
             "vigem": "https://github.com/nefarius/ViGEmBus",
             "hidhide": "https://github.com/nefarius/HidHide",
+            "dshidmini": "https://github.com/nefarius/DsHidMini",
             "gpl": "https://www.gnu.org/licenses/gpl-3.0.html",
             "github": "https://github.com/NandStudio/joystick-doctor",
         }
