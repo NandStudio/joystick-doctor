@@ -68,3 +68,20 @@ def save_thanks_hidden(hidden: bool) -> None:
     data = _read()
     data["thanks_hidden"] = bool(hidden)
     _write(data)
+
+
+def load_generic_map(descriptor: str) -> str | None:
+    raw = _read().get("generic_maps")
+    if not isinstance(raw, dict):
+        return None
+    value = raw.get(descriptor)
+    return value if isinstance(value, str) and value else None
+
+
+def save_generic_map(descriptor: str, map_id: str) -> None:
+    data = _read()
+    raw = data.get("generic_maps")
+    maps = raw if isinstance(raw, dict) else {}
+    maps[descriptor] = map_id
+    data["generic_maps"] = maps
+    _write(data)

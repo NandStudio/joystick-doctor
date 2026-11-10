@@ -12,13 +12,13 @@ from PySide6.QtGui import QDesktopServices
 
 from engine import hidhide, ps3drv
 from engine.device.catalog import device_key, enumerate_all, hide_paths_for
-from engine.device.hid_generic import HidTrace
+from engine.device.hid_generic import MAP_A1WC, MAP_GENERIC, HidTrace, generic_map_for, map_buttons
 from engine.device.hotplug import HotplugMonitor
 from engine.device.pump import DevicePump
 from engine.device.xinput import enumerate_devices as enumerate_xinput
 from engine.guided import GuidedSession
 from engine.pipeline import Calibration, StickCal, apply_calibration, apply_stick
-from engine.prefs import load_debug, load_language, load_theme, load_thanks_hidden, save_debug, save_language, save_theme, save_thanks_hidden
+from engine.prefs import load_debug, load_generic_map, load_language, load_theme, load_thanks_hidden, save_debug, save_generic_map, save_language, save_theme, save_thanks_hidden
 from engine.supportlog import logs_dir, set_snapshot, write_failure
 from engine.update import Release
 from engine.update import download_installer as download_app_update
@@ -113,6 +113,9 @@ class AppController(QObject):
         self._devices: dict[str, DeviceIdentity] = {}
         self._pump: DevicePump | None = None
         self._traced = 0
+        self._generic_open = False
+        self._generic_descriptor = ""
+        self._generic_map = MAP_GENERIC
         self._session = "empty"
         self._session_detail = ""
         self._view = "physical"
@@ -265,6 +268,48 @@ class AppController(QObject):
         self._offer_update()
         self._flush_thanks()
 
+    def _sync_generic_map(self) -> None:
+        pump = self._pump
+        if pump is None or not self._generic_open:
+            return
+        desc = pump.descriptor()
+        if not desc or desc == self._generic_descriptor:
+            return
+        self._generic_descriptor = desc
+        saved = load_generic_map(desc)
+        if saved not in (MAP_GENERIC, MAP_A1WC):
+            match = generic_map_for(bytes.fromhex(desc))
+            saved = match.id if match is not None else MAP_GENERIC
+        self._generic_map = saved
+        self._push_generic_map()
+        self._emit_chrome()
+
+    def _push_generic_map(self) -> None:
+        if self._pump is None:
+            return
+        self._pump.set_buttons(map_buttons(self._generic_map))
+
+    @Slot(int)
+    def setGenericMap(self, index: int) -> None:
+        if index not in (0, 1) or not self._generic_descriptor:
+            return
+        chosen = MAP_A1WC if index == 1 else MAP_GENERIC
+        if chosen == self._generic_map:
+            return
+        self._generic_map = chosen
+        try:
+            save_generic_map(self._generic_descriptor, chosen)
+        except OSError as exc:
+            self._note_failure("save map", exc)
+        self._push_generic_map()
+        self._emit_chrome()
+
+    def _generic_pad(self) -> bool:
+        return self._generic_open
+
+    def _generic_map_index(self) -> int:
+        return 1 if self._generic_map == MAP_A1WC else 0
+
     def _drain_trace(self) -> None:
         if not self._debug:
             return
@@ -342,6 +387,9 @@ class AppController(QObject):
             self._pump.stop()
             self._pump = None
         self._traced = 0
+        self._generic_open = False
+        self._generic_descriptor = ""
+        self._generic_map = MAP_GENERIC
         self._has_sample = False
         self._packets = 0
         self._poll_hz = -1.0
@@ -350,6 +398,7 @@ class AppController(QObject):
         self._stop_pump()
         self._session = "loading"
         self._session_detail = tr("opening_pad")
+        self._generic_open = device.backend == "hid_generic"
         self._pump = DevicePump(device)
         self._pump.start()
         self._load_profile(device)
@@ -507,6 +556,7 @@ class AppController(QObject):
         if self._pump is None:
             return
         self._drain_trace()
+        self._sync_generic_map()
         if self._virtual.error():
             self._notice = tr("virtual_err", error=self._virtual.error())
             self._log_event("WARN", tr("log_error", text=str(self._virtual.error())))
@@ -1774,6 +1824,8 @@ class AppController(QObject):
     ltText = Property(str, _lt_text, notify=frame)
     rtText = Property(str, _rt_text, notify=frame)
     vigemWord = Property(str, _vigem_word, notify=chromeChanged)
+    genericPad = Property(bool, _generic_pad, notify=chromeChanged)
+    genericMapIndex = Property(int, _generic_map_index, notify=chromeChanged)
     appVersion = Property(str, _app_version, constant=True)
     updateStatus = Property(str, _update_status_value, notify=chromeChanged)
     updateDetail = Property(str, _update_detail_value, notify=chromeChanged)
