@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 
 import hid
 
@@ -22,6 +23,12 @@ _DS4_PIDS = {0x05C4, 0x09CC, 0x0BA0}
 _DS5_PIDS = {0x0CE6, 0x0DF2}
 _LOGITECH_VID = 0x046D
 _F310_PID = 0xC21D
+_DRAGONRISE_ID = (0x0079, 0x0006)
+_TRACE_CAP = 32
+_PAGE_DESKTOP = 0x01
+_USE_X = 0x30
+_USE_Y = 0x31
+_WIDE_AXES = {0x32, 0x33, 0x34, 0x35}
 # DirectInput gamepads that share one report: hat, then X A B Y LB RB LT RT Back Start LS RS.
 # RumblePad 2 is C218 (USB) and C219 (cordless). C216 is the Dual Action / F310 in D.
 _LOGITECH_DINPUT = {0xC216, 0xC218, 0xC219}
@@ -334,6 +341,98 @@ def parse_report(
     return _parse_generic_u8(_payload(data), trigger_mode)
 
 
+@dataclass(frozen=True, slots=True)
+class DragonRiseLayout:
+    name: str
+    descriptor: bytes
+    buttons: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class HidTrace:
+    kind: str
+    maker: str = ""
+    product: str = ""
+    descriptor: str = ""
+    report: str = ""
+    parsed: str = ""
+
+
+# buttons[0] is HID button 1. An entry is added only after a captured report names that board.
+DRAGONRISE_LAYOUTS: tuple[DragonRiseLayout, ...] = ()
+
+
+def dragonrise_layout(descriptor: bytes) -> DragonRiseLayout | None:
+    found = [item for item in DRAGONRISE_LAYOUTS if item.descriptor == descriptor]
+    if len(found) != 1:
+        return None
+    return found[0]
+
+
+def _is_dragonrise(identity: DeviceIdentity) -> bool:
+    return (identity.vendor_id, identity.product_id) == _DRAGONRISE_ID
+
+
+def _hid_string(read) -> str:
+    try:
+        value = read()
+    except (OSError, ValueError, TypeError, AttributeError, UnicodeError):
+        return ""
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    return (value or "").strip()
+
+
+def _read_bits(data: bytes | bytearray, start: int, size: int) -> int | None:
+    if size <= 0 or start < 0 or start + size > len(data) * 8:
+        return None
+    value = 0
+    for bit in range(size):
+        cursor = start + bit
+        if data[cursor // 8] & (1 << (cursor % 8)):
+            value |= 1 << bit
+    return value
+
+
+def _write_bits(data: bytearray, start: int, size: int, value: int) -> None:
+    for bit in range(size):
+        cursor = start + bit
+        index = cursor // 8
+        if index >= len(data):
+            return
+        mask = 1 << (cursor % 8)
+        if value & (1 << bit):
+            data[index] |= mask
+        else:
+            data[index] &= ~mask
+
+
+def _trace_key(data: bytes, layout: HidLayout | None) -> bytes:
+    masked = bytearray(data)
+    if layout is None:
+        if len(masked) >= 1:
+            masked[0] = 0
+        if len(masked) >= 2:
+            masked[1] = 0
+        return bytes(masked)
+    origin = 8 if layout.numbered else 0
+    for field in layout.fields:
+        if field.page != _PAGE_DESKTOP:
+            continue
+        start = origin + field.bit_offset
+        if field.usage in (_USE_X, _USE_Y):
+            _write_bits(masked, start, field.size, 0)
+        elif field.usage in _WIDE_AXES and field.size >= 8:
+            value = _read_bits(masked, start, field.size)
+            if value is None:
+                continue
+            # Nearest 32, so a center that flickers between 127 and 128 stays one line.
+            step = 32
+            coarse = min((1 << field.size) - 1, ((value + step // 2) // step) * step)
+            _write_bits(masked, start, field.size, coarse)
+    return bytes(masked)
+
+
 class GenericHidReader:
     def __init__(self, identity: DeviceIdentity):
         self.identity = identity
@@ -341,6 +440,10 @@ class GenericHidReader:
         self._layout: HidLayout | None = None
         self._last: NormalizedState | None = None
         self._trigger_mode: dict[str, str | None] = {"kind": None}
+        self._dragon: DragonRiseLayout | None = None
+        self._trace: list[HidTrace] = []
+        self._seen: set[bytes] = set()
+        self._tracing = False
 
     def open(self) -> None:
         device = hid.device()
@@ -353,15 +456,34 @@ class GenericHidReader:
         self._layout = None
         self._last = None
         self._trigger_mode = {"kind": None}
+        self._dragon = None
+        self._trace = []
+        self._seen = set()
+        self._tracing = False
         if _keeps_own_parser(self.identity):
             return
+        raw = b""
         try:
-            raw = device.get_report_descriptor()
+            got = device.get_report_descriptor()
+            if got:
+                raw = bytes(got)
         except (OSError, ValueError, TypeError):
-            return
-        if not raw:
-            return
-        self._layout = layout_from_descriptor(bytes(raw))
+            raw = b""
+        if raw:
+            self._layout = layout_from_descriptor(raw)
+        if _is_dragonrise(self.identity):
+            self._dragon = dragonrise_layout(raw)
+            if self._dragon is not None:
+                return
+        self._tracing = True
+        self._trace.append(
+            HidTrace(
+                kind="pad",
+                maker=_hid_string(device.get_manufacturer_string),
+                product=self.identity.product_name or _hid_string(device.get_product_string),
+                descriptor=raw.hex(" ") if raw else "-",
+            )
+        )
 
     def close(self) -> None:
         if self._dev is not None:
@@ -376,20 +498,39 @@ class GenericHidReader:
             return None
         return bytes(data)
 
+    def trace(self) -> list[HidTrace]:
+        return list(self._trace)
+
     def read(self) -> NormalizedState | None:
         data = self.read_raw()
         if data is None:
             return None
+        state = self._parse(data)
+        self._last = state
+        if self._tracing:
+            self._note(data, state)
+        return state
+
+    def _parse(self, data: bytes) -> NormalizedState:
+        names = self._dragon.buttons if self._dragon is not None else None
         if self._layout is not None and not _is_x360_report(data):
             parsed = parse_hid_layout(
-                data, self._layout, self._last, self._trigger_mode
+                data, self._layout, self._last, self._trigger_mode, names
             )
             if parsed is not None:
-                self._last = parsed
                 return parsed
-        state = parse_report(data, self.identity, self._trigger_mode)
-        self._last = state
-        return state
+        return parse_report(data, self.identity, self._trigger_mode)
+
+    def _note(self, data: bytes, state: NormalizedState) -> None:
+        if len(self._trace) >= _TRACE_CAP:
+            return
+        key = _trace_key(data, self._layout)
+        if key in self._seen:
+            return
+        self._seen.add(key)
+        self._trace.append(
+            HidTrace(kind="report", report=data.hex(" "), parsed=state.format_line())
+        )
 
     def __enter__(self) -> GenericHidReader:
         self.open()

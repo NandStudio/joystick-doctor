@@ -395,11 +395,19 @@ def _remember_trigger(
     return None
 
 
+def _write_button(state: NormalizedState, name: str, pressed: bool) -> None:
+    if name in ("lt", "rt"):
+        setattr(state, name, 1.0 if pressed else 0.0)
+        return
+    setattr(state, name, pressed)
+
+
 def parse_hid_layout(
     data: bytes,
     layout: HidLayout,
     previous: NormalizedState | None = None,
     trigger_mode: dict[str, str | None] | None = None,
+    button_names: tuple[str, ...] | None = None,
 ) -> NormalizedState | None:
     """Read one report. Bits that do not fit keep the previous sticks and buttons."""
     if not data or layout is None:
@@ -506,13 +514,14 @@ def parse_hid_layout(
             apply_hat(state, index)
     button_fields = [field for field in matching if field.page == _PAGE_BUTTON] if complete else []
     button_fields.sort(key=lambda field: field.usage)
+    names = button_names if button_names is not None else _BUTTON_NAMES
     for slot, field in enumerate(button_fields):
-        if slot >= len(_BUTTON_NAMES):
+        if slot >= len(names):
             break
         found = present.get((field.page, field.usage))
         if found is None:
             continue
-        setattr(state, _BUTTON_NAMES[slot], bool(found[0]))
+        _write_button(state, names[slot], bool(found[0]))
     state.timestamp = time.perf_counter()
     return state
 
