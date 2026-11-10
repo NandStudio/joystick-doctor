@@ -1,11 +1,14 @@
-.vscode
+# Editor
+.vscode/
+.idea/
+
 # Track .cursor/rules/; keep local docs and the slice-commit rule out of git
 .cursor/docs/
 .cursor/rules/commit-slices.mdc
-.venv
-__pycache__
-build/
-dist/
+
+# Python
+.venv/
+__pycache__/
 *.pyc
 *.pyo
 *.pyd
@@ -13,6 +16,17 @@ dist/
 *.pyz
 *.pywz
 *.pyzw
-*.pyz
-*.pywz
-*.pyzw
+
+# Packaging
+build/
+dist/
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local
+CHANGELOG.md
+logs/
+.DS_Store
