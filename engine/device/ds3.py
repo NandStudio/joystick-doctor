@@ -273,7 +273,23 @@ _SONY_MARK = {
     0x0268: "VID_054C&PID_0268",
     0x042F: "VID_054C&PID_042F",
 }
-_disguise_cache: dict[str, int | None] = {}
+_disguise_cache: dict[str, tuple[int | None, str]] = {}
+
+
+class _GUID(ctypes.Structure):
+    _fields_ = [
+        ("Data1", wintypes.DWORD),
+        ("Data2", wintypes.WORD),
+        ("Data3", wintypes.WORD),
+        ("Data4", wintypes.BYTE * 8),
+    ]
+
+
+class _DEVPROPKEY(ctypes.Structure):
+    _fields_ = [
+        ("fmtid", _GUID),
+        ("pid", wintypes.ULONG),
+    ]
 
 
 def _path_text(path: bytes | str) -> str:
@@ -346,25 +362,89 @@ def connected_sony_instances() -> list[str]:
     return found
 
 
-def disguised_sony_pid(device: DeviceIdentity) -> int | None:
-    """DsHidMini XInput mode publishes the DS3 as an Xbox One (045E:02FF)."""
+def _bus_name_key() -> _DEVPROPKEY:
+    key = _DEVPROPKEY()
+    key.fmtid.Data1 = 0x540B947E
+    key.fmtid.Data2 = 0x8B40
+    key.fmtid.Data3 = 0x45BC
+    key.fmtid.Data4 = (wintypes.BYTE * 8)(0xA8, 0xA2, 0x6A, 0x0B, 0x89, 0x4C, 0xBD, 0xA2)
+    key.pid = 4
+    return key
+
+
+def _devnode_bus_name(instance: str) -> str:
+    cfg = ctypes.windll.cfgmgr32
+    locate = cfg.CM_Locate_DevNodeW
+    locate.argtypes = [ctypes.POINTER(wintypes.DWORD), wintypes.LPCWSTR, wintypes.ULONG]
+    locate.restype = wintypes.DWORD
+    read = cfg.CM_Get_DevNode_PropertyW
+    read.argtypes = [
+        wintypes.DWORD,
+        ctypes.POINTER(_DEVPROPKEY),
+        ctypes.POINTER(wintypes.ULONG),
+        ctypes.c_void_p,
+        ctypes.POINTER(wintypes.ULONG),
+        wintypes.ULONG,
+    ]
+    read.restype = wintypes.DWORD
+    devinst = wintypes.DWORD()
+    if locate(ctypes.byref(devinst), instance, 0) != 0:
+        return ""
+    key = _bus_name_key()
+    kind = wintypes.ULONG()
+    buf = ctypes.create_unicode_buffer(512)
+    size = wintypes.ULONG(ctypes.sizeof(buf))
+    if read(devinst, ctypes.byref(key), ctypes.byref(kind), buf, ctypes.byref(size), 0) != 0:
+        return ""
+    return buf.value.strip()
+
+
+def _generic_pad_text(name: str) -> bool:
+    text = name.upper()
+    return "USB GAMEPAD" in text or "USB JOYSTICK" in text or text.startswith("GENERIC")
+
+
+def _sony_disguise(device: DeviceIdentity) -> tuple[int | None, str]:
+    """DsHidMini publishes a pad as an Xbox One. A USB Gamepad keeps its own name."""
     if (device.vendor_id, device.product_id) != _XBOX_ONE_ID:
-        return None
+        return None, ""
     key = _path_text(device.path)
-    cached = _disguise_cache.get(key)
     if key in _disguise_cache:
-        return cached
+        return _disguise_cache[key]
     sony: int | None = None
+    parent_id = ""
     try:
-        parents = " ".join(_parent_ids(_hid_instance(device.path))).upper()
+        parents = _parent_ids(_hid_instance(device.path))
     except OSError:
-        parents = ""
-    for pid, mark in _SONY_MARK.items():
-        if mark in parents:
-            sony = pid
+        parents = []
+    for parent in parents:
+        upper = parent.upper()
+        for pid, mark in _SONY_MARK.items():
+            if mark in upper:
+                sony = pid
+                parent_id = parent
+                break
+        if sony is not None:
             break
-    _disguise_cache[key] = sony
-    return sony
+    generic = ""
+    if parent_id:
+        reported = _devnode_bus_name(parent_id)
+        if _generic_pad_text(reported):
+            generic = reported
+            sony = None
+    found = (sony, generic)
+    _disguise_cache[key] = found
+    return found
+
+
+def disguised_sony_pid(device: DeviceIdentity) -> int | None:
+    """Official DS3 behind DsHidMini. A generic USB gamepad is not one."""
+    return _sony_disguise(device)[0]
+
+
+def generic_ds3_name(device: DeviceIdentity) -> str | None:
+    name = _sony_disguise(device)[1]
+    return name or None
 
 
 class Ds3Reader(HidPathReader):

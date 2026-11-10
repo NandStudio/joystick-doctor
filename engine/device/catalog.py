@@ -8,6 +8,7 @@ from engine.device.ds3 import PIDS as DS3_PIDS
 from engine.device.ds3 import VID as DS3_VID
 from engine.device.ds3 import Ds3Reader
 from engine.device.ds3 import disguised_sony_pid
+from engine.device.ds3 import generic_ds3_name
 from engine.device.ds3 import enumerate_devices as enumerate_ds3
 from engine.device.ds4 import PIDS as DS4_PIDS
 from engine.device.ds4 import VID as DS4_VID
@@ -61,7 +62,7 @@ def _prefer_xinput(
     device: DeviceIdentity, hid: DeviceIdentity | None = None
 ) -> bool:
     """Known Xbox and XInput pads stay on XInputGetState. A nameless slot does not."""
-    if hid is not None and disguised_sony_pid(hid):
+    if hid is not None and (disguised_sony_pid(hid) or generic_ds3_name(hid)):
         return False
     if not device.vendor_id:
         return False
@@ -73,7 +74,7 @@ def _prefer_xinput(
 def _hidden_by_xinput(
     device: DeviceIdentity, xinput_devs: list[DeviceIdentity]
 ) -> bool:
-    if disguised_sony_pid(device):
+    if disguised_sony_pid(device) or generic_ds3_name(device):
         return False
     if device.vendor_id == 0x045E and any(item.vendor_id == 0x045E for item in xinput_devs):
         return True
@@ -90,6 +91,9 @@ def _hidden_by_xinput(
 
 
 def _classify_hid(device: DeviceIdentity) -> DeviceIdentity:
+    generic = generic_ds3_name(device)
+    if generic:
+        return replace(device, backend="hid_generic", product_name=generic)
     sony = disguised_sony_pid(device)
     if sony == 0x0268:
         return replace(device, backend="ds3", product_name="DualShock 3")
