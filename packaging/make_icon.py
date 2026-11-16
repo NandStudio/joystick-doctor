@@ -1,4 +1,4 @@
-"""Build assets/icon.ico from the light-theme logo for the installer and the exe."""
+"""Build assets/icon.ico from the light app icon for the installer and the exe."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from PySide6.QtCore import QBuffer, QByteArray, QIODevice
 from PySide6.QtGui import QGuiApplication, QImage
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "assets" / "logo-theme-light.svg"
+SRC = ROOT / "assets" / "app-icon-light.svg"
 DST = ROOT / "assets" / "icon.ico"
 SIZES = (16, 32, 48, 256)
 
@@ -42,11 +42,11 @@ def write_ico(path: Path, frames: list[QImage]) -> None:
 def main() -> None:
     QGuiApplication.instance() or QGuiApplication(sys.argv)
     sys.path.insert(0, str(ROOT))
-    from ui.assets import render_logo
+    from ui.assets import render_svg
 
     if not SRC.is_file():
         raise SystemExit(f"Missing {SRC}")
-    frames = [render_logo(SRC, size) for size in SIZES]
+    frames = [render_svg(SRC, size) for size in SIZES]
     DST.parent.mkdir(parents=True, exist_ok=True)
     write_ico(DST, frames)
     print(f"Wrote {DST} ({', '.join(str(s) for s in SIZES)})")

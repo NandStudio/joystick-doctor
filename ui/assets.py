@@ -18,13 +18,7 @@ def asset_path(name: str) -> Path:
     return bundle_root() / "assets" / name
 
 
-def logo_file(mode: str) -> Path:
-    # The dark-theme file is the white mark. High contrast sits on black.
-    name = "logo-theme-dark.svg" if mode in ("dark", "contrast") else "logo-theme-light.svg"
-    return asset_path(name)
-
-
-def render_logo(path: Path, size: int) -> QImage:
+def render_svg(path: Path, size: int) -> QImage:
     renderer = QSvgRenderer(str(path))
     image = QImage(size, size, QImage.Format.Format_ARGB32)
     image.fill(Qt.GlobalColor.transparent)
@@ -33,7 +27,7 @@ def render_logo(path: Path, size: int) -> QImage:
     box = renderer.viewBoxF()
     if box.isEmpty():
         box = QRectF(0, 0, renderer.defaultSize().width(), renderer.defaultSize().height())
-    scale = min(size / box.width(), size / box.height()) * 0.86
+    scale = min(size / box.width(), size / box.height())
     width = box.width() * scale
     height = box.height() * scale
     painter = QPainter(image)
@@ -46,11 +40,28 @@ def render_logo(path: Path, size: int) -> QImage:
     return image
 
 
-def logo_icon(mode: str) -> QIcon:
-    path = logo_file(mode)
+def _icon_from(path: Path) -> QIcon:
     icon = QIcon()
     if not path.is_file():
         return icon
     for size in (16, 24, 32, 48, 256):
-        icon.addPixmap(QPixmap.fromImage(render_logo(path, size)))
+        icon.addPixmap(QPixmap.fromImage(render_svg(path, size)))
     return icon
+
+
+def app_icon_file(dark: bool) -> Path:
+    name = "app-icon-dark.svg" if dark else "app-icon-light.svg"
+    return asset_path(name)
+
+
+def shell_icon(dark: bool) -> QIcon:
+    return _icon_from(app_icon_file(dark))
+
+
+def system_uses_dark_icons() -> bool:
+    from PySide6.QtGui import QGuiApplication
+
+    app = QGuiApplication.instance()
+    if app is None:
+        return False
+    return app.styleHints().colorScheme() == Qt.ColorScheme.Dark

@@ -31,7 +31,7 @@ from engine.state import DeviceIdentity, NormalizedState
 from engine.vigem import ViGEmMissingError, download_installer, is_installed as vigem_installed
 from engine.vigem import launch_installer
 from engine.virtual import VirtualXbox
-from ui.assets import asset_path, bundle_root, logo_icon
+from ui.assets import asset_path, bundle_root, shell_icon, system_uses_dark_icons
 from ui.i18n import set_language, tr
 from ui.theme import Palette
 
@@ -100,8 +100,8 @@ class AppController(QObject):
         self._settings_error = False
         self._palette = palette or Palette(self)
         self._window = None
-        self._palette.changed.connect(self.apply_brand_icon)
         self._palette.set_mode(load_theme())
+        self._watch_system_icon()
         self._debug = load_debug()
         self._thanks_hidden = load_thanks_hidden()
         self._thanks_open = False
@@ -606,10 +606,19 @@ class AppController(QObject):
         self._has_sample = True
         self.frame.emit()
 
+    def _watch_system_icon(self) -> None:
+        from PySide6.QtGui import QGuiApplication
+
+        app = QGuiApplication.instance()
+        if app is None:
+            return
+        app.styleHints().colorSchemeChanged.connect(lambda *_args: self.apply_brand_icon())
+        self.apply_brand_icon()
+
     def apply_brand_icon(self) -> None:
         from PySide6.QtGui import QGuiApplication
 
-        icon = logo_icon(self._palette.mode())
+        icon = shell_icon(system_uses_dark_icons())
         if icon.isNull():
             return
         app = QGuiApplication.instance()
