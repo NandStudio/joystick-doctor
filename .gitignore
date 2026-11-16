@@ -27,6 +27,5 @@ dist/
 .mypy_cache/
 
 # Local
-CHANGELOG.md
 logs/
 .DS_Store
