@@ -257,10 +257,7 @@ Item {
                 }
                 FieldCombo {
                     Layout.fillWidth: true
-                    model: [
-                        app.langTick >= 0 ? app.label("map_generic") : "",
-                        app.langTick >= 0 ? app.label("map_a1wc") : ""
-                    ]
+                    model: app.genericMapLabels
                     currentIndex: app.genericMapIndex
                     onActivated: app.setGenericMap(currentIndex)
                 }

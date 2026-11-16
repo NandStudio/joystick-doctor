@@ -382,8 +382,18 @@ _A1WC_DESCRIPTOR = bytes.fromhex(
     "29 10 15 00 25 01 75 01 95 10 45 00 81 02 05 01 09 39 15 01 25 08 35 00 "
     "46 3b 10 65 0e 75 04 95 01 81 42 75 04 95 01 81 03 75 08 95 02 81 03 c0"
 )
+_DBLUE_BUTTONS = ("a", "b", "x", "y", "lb", "rb", "back", "start", "ls", "rs", "guide")
+_DBLUE_DESCRIPTOR = bytes.fromhex(
+    "05 01 09 04 a1 01 09 00 a1 02 09 30 09 31 15 00 26 ff 00 35 00 46 ff 00 "
+    "75 08 95 02 81 02 75 08 95 01 81 03 09 32 09 35 15 00 26 ff 00 75 08 95 02 "
+    "81 02 09 39 15 00 25 07 35 00 46 3b 01 65 14 75 04 95 01 81 42 05 09 19 01 "
+    "29 0c 15 00 25 01 75 01 95 0c 45 00 65 00 81 02 06 00 ff 09 01 15 00 25 01 "
+    "75 01 95 08 81 02 c0 09 00 a1 02 09 02 15 00 26 ff 00 35 00 46 ff 00 75 08 "
+    "95 07 91 02 c0 c0"
+)
 MAP_GENERIC = "generic"
 MAP_A1WC = "a1wc"
+MAP_DBLUE = "dblue"
 
 
 @dataclass(frozen=True, slots=True)
@@ -396,7 +406,12 @@ class GenericMap:
 
 GENERIC_MAPS: tuple[GenericMap, ...] = (
     GenericMap(MAP_A1WC, "DualShock 3 A1 WC", _A1WC_DESCRIPTOR, _A1WC_BUTTONS),
+    GenericMap(MAP_DBLUE, "DBlue", _DBLUE_DESCRIPTOR, _DBLUE_BUTTONS),
 )
+
+
+def map_ids() -> tuple[str, ...]:
+    return (MAP_GENERIC,) + tuple(item.id for item in GENERIC_MAPS)
 
 
 def generic_map_for(descriptor: bytes) -> GenericMap | None:

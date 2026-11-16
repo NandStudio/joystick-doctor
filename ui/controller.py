@@ -12,7 +12,7 @@ from PySide6.QtGui import QDesktopServices
 
 from engine import hidhide, ps3drv
 from engine.device.catalog import device_key, enumerate_all, hide_paths_for
-from engine.device.hid_generic import MAP_A1WC, MAP_GENERIC, HidTrace, generic_map_for, map_buttons
+from engine.device.hid_generic import MAP_GENERIC, HidTrace, generic_map_for, map_buttons, map_ids
 from engine.device.hotplug import HotplugMonitor
 from engine.device.pump import DevicePump
 from engine.device.xinput import enumerate_devices as enumerate_xinput
@@ -277,7 +277,7 @@ class AppController(QObject):
             return
         self._generic_descriptor = desc
         saved = load_generic_map(desc)
-        if saved not in (MAP_GENERIC, MAP_A1WC):
+        if saved not in map_ids():
             match = generic_map_for(bytes.fromhex(desc))
             saved = match.id if match is not None else MAP_GENERIC
         self._generic_map = saved
@@ -291,9 +291,10 @@ class AppController(QObject):
 
     @Slot(int)
     def setGenericMap(self, index: int) -> None:
-        if index not in (0, 1) or not self._generic_descriptor:
+        ids = map_ids()
+        if not self._generic_descriptor or index < 0 or index >= len(ids):
             return
-        chosen = MAP_A1WC if index == 1 else MAP_GENERIC
+        chosen = ids[index]
         if chosen == self._generic_map:
             return
         self._generic_map = chosen
@@ -308,7 +309,18 @@ class AppController(QObject):
         return self._generic_open
 
     def _generic_map_index(self) -> int:
-        return 1 if self._generic_map == MAP_A1WC else 0
+        try:
+            return map_ids().index(self._generic_map)
+        except ValueError:
+            return 0
+
+    def _generic_map_labels(self) -> list[str]:
+        labels = {
+            "generic": tr("map_generic"),
+            "a1wc": tr("map_a1wc"),
+            "dblue": tr("map_dblue"),
+        }
+        return [labels.get(map_id, map_id) for map_id in map_ids()]
 
     def _drain_trace(self) -> None:
         if not self._debug:
@@ -1826,6 +1838,7 @@ class AppController(QObject):
     vigemWord = Property(str, _vigem_word, notify=chromeChanged)
     genericPad = Property(bool, _generic_pad, notify=chromeChanged)
     genericMapIndex = Property(int, _generic_map_index, notify=chromeChanged)
+    genericMapLabels = Property("QVariantList", _generic_map_labels, notify=languageChanged)
     appVersion = Property(str, _app_version, constant=True)
     updateStatus = Property(str, _update_status_value, notify=chromeChanged)
     updateDetail = Property(str, _update_detail_value, notify=chromeChanged)
