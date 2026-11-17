@@ -9,6 +9,7 @@
 #define MyAppExeName "JoystickDoctor.exe"
 #define DistDir SourcePath + "..\dist\JoystickDoctor"
 #define AppIcon SourcePath + "..\assets\icon.ico"
+#define SetupIcon SourcePath + "..\assets\setup-icon.ico"
 
 [Setup]
 AppId={{8F3C2E1A-6B47-4D09-9C5A-1E7D2A4B9083}}
@@ -28,8 +29,8 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=6.1sp1
-UninstallDisplayIcon={app}\{#MyAppExeName}
-SetupIconFile={#AppIcon}
+UninstallDisplayIcon={app}\JoystickDoctor.ico
+SetupIconFile={#SetupIcon}
 CloseApplications=yes
 SetupLogging=yes
 
@@ -42,10 +43,21 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#DistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#AppIcon}"; DestDir: "{app}"; DestName: "JoystickDoctor.ico"
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\JoystickDoctor.ico"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\JoystickDoctor.ico"; Tasks: desktopicon
+
+[Code]
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep <> ssInstall then
+    Exit;
+  DeleteFile(ExpandConstant('{autoprograms}\{#MyAppName}.lnk'));
+  if WizardIsTaskSelected('desktopicon') then
+    DeleteFile(ExpandConstant('{autodesktop}\{#MyAppName}.lnk'));
+end;
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
